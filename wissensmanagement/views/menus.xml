@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_wm_app" model="ir.actions.client">
+        <field name="name">Wissensmanagement</field>
+        <field name="tag">wissensmanagement.app</field>
+    </record>
+
+    <menuitem id="menu_wm_root" name="Wissensmanagement" sequence="45"
+              web_icon="wissensmanagement,static/description/icon.png"
+              groups="wissensmanagement.group_reader"/>
+    <menuitem id="menu_wm_pages" name="Seiten" parent="menu_wm_root" sequence="10" action="action_wm_app"/>
+    <menuitem id="menu_wm_config" name="Konfiguration" parent="menu_wm_root" sequence="90" groups="wissensmanagement.group_manager"/>
+    <menuitem id="menu_wm_access" name="Ordnerrechte" parent="menu_wm_config" sequence="20"
+              action="action_wissen_access_rule" groups="wissensmanagement.group_manager"/>
+    <menuitem id="menu_wm_settings" name="Einstellungen" parent="menu_wm_config" sequence="10"
+              action="action_wm_settings" groups="base.group_system"/>
+</odoo>

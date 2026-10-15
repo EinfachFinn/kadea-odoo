@@ -1,0 +1,604 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- ================================================================ -->
+    <!-- Haupt-App                                                        -->
+    <!-- ================================================================ -->
+    <t t-name="wissensmanagement.App">
+        <div class="o_wm_app" t-att-class="presetClass" t-att-style="styleVars">
+            <style t-if="customCss" t-esc="customCss"/>
+
+            <div t-if="state.loading" class="o_wm_center text-muted">
+                <i class="fa fa-circle-o-notch fa-spin me-2"/>Wissen wird geladen …
+            </div>
+
+            <div t-elif="state.error" class="o_wm_center">
+                <div class="alert alert-danger" t-esc="state.error"/>
+            </div>
+
+            <div t-elif="!config.configured" class="o_wm_center">
+                <div class="o_wm_setup text-center">
+                    <i class="fa fa-book fa-3x mb-3 text-muted"/>
+                    <h2>Willkommen im Wissensmanagement</h2>
+                    <p class="text-muted">Lege zuerst fest, in welchem Ordner auf dem Odoo-Server deine Markdown-Dateien liegen.</p>
+                    <button t-if="config.can_configure" class="btn btn-primary" t-on-click="openSettings">
+                        <i class="fa fa-cog me-1"/>Wissensordner einstellen
+                    </button>
+                    <p t-else="" class="text-muted">Bitte wende dich an einen Administrator.</p>
+                </div>
+            </div>
+
+            <t t-else="">
+                <!-- ======================= Seitenleiste ======================= -->
+                <aside t-if="state.sidebarOpen" class="o_wm_sidebar">
+                    <div class="o_wm_sidebar_head">
+                        <span class="o_wm_vault_name" t-att-title="state.rootName">
+                            <i class="fa fa-book me-2"/>Wissen
+                        </span>
+                        <button class="btn btn-sm btn-link" title="Übersicht: Graph, Tags, verwaiste Seiten, kaputte Links" t-on-click="openOverview"><i class="fa fa-sitemap"/></button>
+                        <button t-if="config.can_write" class="btn btn-sm btn-link" title="Papierkorb: gelöschte Seiten wiederherstellen" t-on-click="openTrash"><i class="fa fa-trash-o"/></button>
+                        <button class="btn btn-sm btn-link" title="Neu laden" t-on-click="refresh"><i class="fa fa-refresh"/></button>
+                        <button t-if="config.can_configure" class="btn btn-sm btn-link" title="Einstellungen" t-on-click="openSettings"><i class="fa fa-cog"/></button>
+                    </div>
+                    <div class="o_wm_search">
+                        <i class="fa fa-search"/>
+                        <input t-ref="search" type="search" class="form-control form-control-sm" placeholder="Suchen … ( / )"
+                               t-att-value="state.query" t-on-input="onSearchInput" t-on-keydown="onSearchKeydown"/>
+                    </div>
+                    <div t-if="canWrite" class="o_wm_sidebar_actions">
+                        <button class="btn btn-primary btn-sm flex-grow-1" t-on-click="() => this.createPage('')">
+                            <i class="fa fa-plus me-1"/>Neue Seite
+                        </button>
+                        <button class="btn btn-secondary btn-sm" title="Neuer Ordner" t-on-click="() => this.createFolder('')">
+                            <i class="fa fa-folder-o"/>
+                        </button>
+                    </div>
+
+                    <div t-if="state.results" class="o_wm_results">
+                        <div class="o_wm_results_head">
+                            <t t-esc="state.results.length"/> Treffer
+                            <a href="#" class="ms-auto" t-on-click.prevent="clearSearch">Zurück zum Baum</a>
+                        </div>
+                        <a t-foreach="state.results" t-as="r" t-key="r.path" href="#" class="o_wm_result"
+                           t-on-click.prevent="() => this.openPage(r.path)">
+                            <div class="o_wm_result_name"><i class="fa fa-file-text-o me-1"/><t t-esc="r.name"/></div>
+                            <div class="o_wm_result_path" t-esc="r.path"/>
+                            <div t-if="r.snippet" class="o_wm_result_snippet" t-out="highlight(r.snippet)"/>
+                        </a>
+                    </div>
+                    <div t-else="" class="o_wm_tree" t-att-class="{ o_wm_drop_root: state.dropTarget === '' }"
+                         t-on-dragover="onRootDragOver" t-on-drop="onRootDrop">
+                        <!-- Favoriten -->
+                        <div t-if="state.sidebar.favorites.length" class="o_wm_section">
+                            <div class="o_wm_section_head" t-on-click="() => this.toggleSection('favorites')">
+                                <i t-attf-class="fa fa-caret-{{ state.sections.favorites ? 'down' : 'right' }} me-1"/>Favoriten
+                            </div>
+                            <t t-if="state.sections.favorites">
+                                <a t-foreach="state.sidebar.favorites" t-as="f" t-key="f.path" href="#"
+                                   class="o_wm_section_item" t-att-class="{ active: state.currentPath === f.path }"
+                                   t-on-click.prevent="() => this.openPage(f.path)" t-att-title="f.path">
+                                    <i class="fa fa-star text-warning me-2"/><span class="text-truncate" t-esc="f.name"/>
+                                </a>
+                            </t>
+                        </div>
+                        <!-- Zuletzt bearbeitet -->
+                        <div t-if="state.sidebar.recent.length" class="o_wm_section">
+                            <div class="o_wm_section_head" t-on-click="() => this.toggleSection('recent')">
+                                <i t-attf-class="fa fa-caret-{{ state.sections.recent ? 'down' : 'right' }} me-1"/>Zuletzt bearbeitet
+                            </div>
+                            <t t-if="state.sections.recent">
+                                <a t-foreach="state.sidebar.recent" t-as="r" t-key="r.path" href="#"
+                                   class="o_wm_section_item" t-att-class="{ active: state.currentPath === r.path }"
+                                   t-on-click.prevent="() => this.openPage(r.path)"
+                                   t-att-title="(r.editor or 'außerhalb von Odoo') + ' · ' + absTime(r.date)">
+                                    <img t-if="r.editor_image" class="o_wm_mini_avatar me-2" t-att-src="r.editor_image" alt=""/>
+                                    <i t-else="" class="fa fa-pencil-square-o text-muted me-2"/>
+                                    <span class="text-truncate flex-grow-1" t-esc="r.name"/>
+                                    <span class="o_wm_section_time" t-esc="relTime(r.date)"/>
+                                </a>
+                            </t>
+                        </div>
+                        <div class="o_wm_section_head o_wm_section_static">Seiten</div>
+                        <t t-foreach="state.tree" t-as="node" t-key="node.path">
+                            <TreeNode node="node" depth="0" app="this"/>
+                        </t>
+                        <div t-if="!state.tree.length" class="text-muted p-3 small">Noch keine Seiten. Leg die erste mit „+ Neue Seite“ an.</div>
+                    </div>
+                </aside>
+
+                <!-- ======================= Hauptbereich ======================= -->
+                <main class="o_wm_main">
+                    <header class="o_wm_topbar">
+                        <button class="btn btn-sm btn-link" title="Seitenleiste" t-on-click="toggleSidebar"><i class="fa fa-bars"/></button>
+                        <nav t-if="state.overview" class="o_wm_breadcrumbs"><span class="o_wm_crumb_current">Übersicht</span></nav>
+                        <nav t-elif="state.page" class="o_wm_breadcrumbs">
+                            <t t-foreach="state.page.breadcrumbs" t-as="c" t-key="c.path">
+                                <a href="#" t-on-click.prevent="() => this.openPage(c.path)" t-esc="c.name"/>
+                                <span class="o_wm_sep">/</span>
+                            </t>
+                            <span class="o_wm_crumb_current" t-esc="state.page.name"/>
+                            <button t-if="state.page.is_page" class="o_wm_star" t-on-click="toggleFavorite"
+                                    t-att-title="state.page.meta.favorite ? 'Aus Favoriten entfernen' : 'Zu Favoriten'">
+                                <i t-attf-class="fa {{ state.page.meta.favorite ? 'fa-star text-warning' : 'fa-star-o' }}"/>
+                            </button>
+                        </nav>
+                        <div t-if="!state.overview" class="ms-auto d-flex align-items-center gap-2">
+                            <!-- Wer ist gerade hier? -->
+                            <div t-if="state.others.length" class="o_wm_presence">
+                                <span t-foreach="state.others" t-as="o" t-key="o.id" class="o_wm_presence_user"
+                                      t-att-class="{ o_wm_presence_editing: o.editing }"
+                                      t-att-title="o.name + (o.editing ? ' bearbeitet gerade' : ' liest gerade')">
+                                    <img t-att-src="o.image" alt=""/>
+                                    <i t-if="o.editing" class="fa fa-pencil"/>
+                                </span>
+                            </div>
+                            <span t-if="state.mode === 'write'" class="o_wm_save_status small text-muted"
+                                  t-att-class="{ 'text-warning': state.dirty }" t-esc="saveStatus"/>
+                            <t t-if="state.page and state.page.is_page">
+                                <button class="btn btn-sm btn-link o_wm_topbtn" title="Kommentare"
+                                        t-on-click="() => { state.panelOpen = true; state.panelTab = 'comments'; }">
+                                    <i class="fa fa-comment-o"/><span t-if="state.page.meta.comment_count" class="o_wm_count" t-esc="state.page.meta.comment_count"/>
+                                </button>
+                                <button class="btn btn-sm btn-link o_wm_topbtn" title="Versionsverlauf" t-on-click="showHistory">
+                                    <i class="fa fa-history"/>
+                                </button>
+                                <button class="btn btn-sm btn-link o_wm_topbtn" t-att-class="{ o_wm_shared: state.page.meta.share_mode !== 'off' }"
+                                        t-att-title="state.page.meta.share_mode !== 'off' ? 'Freigegeben' : 'Freigeben'" t-on-click="showShare">
+                                    <i t-attf-class="fa {{ state.page.meta.share_mode !== 'off' ? 'fa-globe' : 'fa-share-alt' }}"/>
+                                </button>
+                            </t>
+                            <Dropdown t-if="state.page" position="'bottom-end'">
+                                <button class="btn btn-sm btn-light" title="Seitenaktionen"><i class="fa fa-ellipsis-h"/></button>
+                                <t t-set-slot="content">
+                                    <t t-if="canWrite">
+                                        <DropdownItem onSelected="() => this.createPage(state.page.path)"><i class="fa fa-plus fa-fw me-2"/>Unterseite anlegen</DropdownItem>
+                                        <DropdownItem onSelected="() => this.createFolder(state.page.path)"><i class="fa fa-folder-o fa-fw me-2"/>Unterordner anlegen</DropdownItem>
+                                        <div class="dropdown-divider"/>
+                                        <DropdownItem onSelected.bind="renamePage"><i class="fa fa-i-cursor fa-fw me-2"/>Umbenennen</DropdownItem>
+                                        <DropdownItem onSelected.bind="moveDialog"><i class="fa fa-arrows fa-fw me-2"/>Verschieben …</DropdownItem>
+                                        <DropdownItem t-if="state.page.is_page" onSelected.bind="duplicatePage"><i class="fa fa-clone fa-fw me-2"/>Duplizieren</DropdownItem>
+                                        <div class="dropdown-divider"/>
+                                    </t>
+                                    <t t-if="state.page.is_page">
+                                        <DropdownItem onSelected.bind="showHistory"><i class="fa fa-history fa-fw me-2"/>Versionsverlauf</DropdownItem>
+                                        <DropdownItem onSelected.bind="showShare"><i class="fa fa-share-alt fa-fw me-2"/>Freigeben (Link / Portal) …</DropdownItem>
+                                        <DropdownItem t-if="config.has_chatter" onSelected.bind="shareToChatter"><i class="fa fa-comments-o fa-fw me-2"/>In Chatter teilen …</DropdownItem>
+                                        <DropdownItem onSelected.bind="printPage"><i class="fa fa-print fa-fw me-2"/>Drucken / als PDF</DropdownItem>
+                                        <DropdownItem onSelected.bind="copyLink"><i class="fa fa-link fa-fw me-2"/>Link zur Seite kopieren</DropdownItem>
+                                    </t>
+                                    <t t-if="canWrite">
+                                        <div class="dropdown-divider"/>
+                                        <DropdownItem class="'text-danger'" onSelected.bind="deletePage"><i class="fa fa-trash fa-fw me-2"/>Löschen</DropdownItem>
+                                    </t>
+                                </t>
+                            </Dropdown>
+                            <button class="btn btn-sm btn-link" title="Seitenleiste rechts" t-on-click="togglePanel"><i class="fa fa-columns"/></button>
+                            <!-- Lesen / Schreiben -->
+                            <div t-if="pageWritable and state.page and state.page.is_page" class="o_wm_mode_switch" title="Strg+E">
+                                <button t-att-class="{ active: state.mode === 'read' }" t-on-click="() => state.mode !== 'read' and this.toggleMode()">
+                                    <i class="fa fa-eye me-1"/>Lesen
+                                </button>
+                                <button t-att-class="{ active: state.mode === 'write' }" t-on-click="() => state.mode !== 'write' and this.toggleMode()">
+                                    <i class="fa fa-pencil me-1"/>Schreiben
+                                </button>
+                            </div>
+                        </div>
+                        <button t-else="" class="btn btn-sm btn-secondary ms-auto" t-on-click="() => state.overview = false">
+                            <i class="fa fa-times me-1"/>Übersicht schließen
+                        </button>
+                    </header>
+
+                    <!-- Hinweis: jemand anderes bearbeitet gerade -->
+                    <t t-set="editors" t-value="state.others.filter((o) => o.editing)"/>
+                    <div t-if="!state.overview and editors.length" class="o_wm_banner">
+                        <i class="fa fa-users me-2"/>
+                        <b t-esc="editors.map((o) => o.name).join(', ')"/>
+                        <t t-if="editors.length === 1"> bearbeitet</t><t t-else=""> bearbeiten</t> diese Seite gerade.
+                        <t t-if="state.mode === 'write' and state.collabJoin and !state.collabOff">Ihr schreibt live gemeinsam: Änderungen und Cursor der anderen erscheinen sofort.</t>
+                        <t t-elif="state.mode === 'write'">Eure Änderungen werden beim Speichern automatisch zusammengeführt.</t>
+                        <t t-else="">Die Ansicht aktualisiert sich automatisch.</t>
+                    </div>
+
+                    <div class="o_wm_body">
+                        <VaultOverview t-if="state.overview" onOpen.bind="openPage" onTag.bind="filterTag"
+                                       currentPath="state.currentPath" onClose="() => state.overview = false"/>
+
+                        <div t-elif="!state.page" class="o_wm_center text-muted">
+                            Wähle links eine Seite aus<t t-if="canWrite"> oder lege eine neue an</t>.
+                        </div>
+
+                        <!-- Schreiben -->
+                        <t t-elif="state.mode === 'write' and state.page.is_page and !editorReady">
+                            <div class="o_wm_center text-muted"><i class="fa fa-circle-o-notch fa-spin me-2"/>Verbinde …</div>
+                        </t>
+                        <t t-elif="state.mode === 'write' and state.page.is_page">
+                            <MarkdownEditor t-key="state.editorKey" collab="collabProps"
+                                            content="draftOrContent" path="state.page.path" index="index"
+                                            templates="templatesLoader" hasProject="!!config.has_project"
+                                            mentionCategories="config.mention_categories or []"
+                                            onOpenPage="(path, anchor) => this.openPage(path, { anchor: anchor or null })"
+                                            onOpenRecord.bind="openRecord"
+                                            onChange.bind="onEditorChange" onSave.bind="save"/>
+                        </t>
+
+                        <!-- Lesen -->
+                        <t t-else="">
+                            <div class="o_wm_scroll" t-ref="content" t-on-mouseup="onContentMouseUp">
+                                <button t-if="state.selectionBtn" class="o_wm_selection_btn"
+                                        t-attf-style="top: {{ state.selectionBtn.top }}px; left: {{ state.selectionBtn.left }}px"
+                                        t-on-mousedown.prevent="commentOnSelection">
+                                    <i class="fa fa-comment-o me-1"/>Kommentieren
+                                </button>
+                                <article class="o_wm_page">
+                                    <h1 t-if="state.showTitle or !state.page.is_page" class="o_wm_title" t-esc="state.page.name"/>
+                                    <!-- zuletzt bearbeitet von -->
+                                    <div t-if="state.page.is_page" class="o_wm_pagebar">
+                                        <t t-set="meta" t-value="state.page.meta"/>
+                                        <span t-if="meta.last_editor" class="o_wm_lastedit">
+                                            Zuletzt bearbeitet von
+                                            <a href="#" class="o_wm_user_chip" t-on-click.prevent="() => this.openUser(meta.last_editor.id)">
+                                                <img t-att-src="meta.last_editor.image" alt=""/>@<t t-esc="meta.last_editor.name"/>
+                                            </a>
+                                            <span class="text-muted" t-att-title="absTime(meta.last_edit_date)">· <t t-esc="relTime(meta.last_edit_date)"/></span>
+                                        </span>
+                                        <span t-elif="meta.last_edit_date" class="o_wm_lastedit text-muted" t-att-title="absTime(meta.last_edit_date)">
+                                            <i class="fa fa-pencil-square-o me-1"/>Zuletzt direkt im Wissensordner geändert · <t t-esc="relTime(meta.last_edit_date)"/>
+                                        </span>
+                                        <a t-foreach="meta.tags" t-as="tag" t-key="tag" href="#" class="o_wm_pagebar_tag"
+                                           t-on-click.prevent="() => this.filterTag(tag)">#<t t-esc="tag"/></a>
+                                    </div>
+                                    <!-- Inhalt wird in decorateContent() selbst befüllt, damit OWL nicht mit den nachträglichen DOM-Änderungen kollidiert -->
+                                    <div t-if="state.page.is_page" class="o_wm_content" t-ref="html" t-on-click="onContentClick"/>
+
+                                    <div t-if="state.page.is_page" class="o_wm_meta text-muted small">
+                                        <i class="fa fa-file-text-o me-1"/><t t-esc="state.page.path"/>
+                                        · <t t-esc="state.page.meta.words"/> Wörter
+                                        · <a href="#" t-on-click.prevent="showHistory"><t t-esc="state.page.meta.version_count"/> Versionen</a>
+                                    </div>
+                                    <section t-if="state.page.children.length" class="o_wm_children">
+                                        <h6 class="text-muted text-uppercase small">Unterseiten</h6>
+                                        <div class="o_wm_cards">
+                                            <a t-foreach="state.page.children" t-as="c" t-key="c.path" href="#" class="o_wm_card"
+                                               t-on-click.prevent="() => this.openPage(c.path)">
+                                                <i t-attf-class="fa {{ c.is_page ? (c.has_children ? 'fa-files-o' : 'fa-file-text-o') : 'fa-folder-o' }} me-2"/>
+                                                <t t-esc="c.name"/>
+                                            </a>
+                                            <a t-if="canWrite" href="#" class="o_wm_card o_wm_card_add" t-on-click.prevent="() => this.createPage(state.page.path)">
+                                                <i class="fa fa-plus me-2"/>Unterseite
+                                            </a>
+                                        </div>
+                                    </section>
+                                    <div t-elif="!state.page.is_page and canWrite" class="mt-4">
+                                        <button class="btn btn-secondary" t-on-click="() => this.createPage(state.page.path)">
+                                            <i class="fa fa-plus me-1"/>Erste Seite in diesem Ordner anlegen
+                                        </button>
+                                    </div>
+                                </article>
+                            </div>
+                        </t>
+
+                        <!-- Rechte Leiste: Gliederung, Rückverweise, Kommentare -->
+                        <aside t-if="!state.overview and state.panelOpen and state.page and state.page.is_page" class="o_wm_panel">
+                            <div class="o_wm_panel_tabs">
+                                <button t-att-class="{ active: state.panelTab === 'outline' }" t-on-click="() => state.panelTab = 'outline'">Gliederung</button>
+                                <button t-att-class="{ active: state.panelTab === 'comments' }" t-on-click="() => state.panelTab = 'comments'">
+                                    Kommentare <span t-if="state.commentCount" class="o_wm_count" t-esc="state.commentCount"/>
+                                </button>
+                            </div>
+                            <t t-if="state.panelTab === 'outline'">
+                                <section t-if="state.headings.length">
+                                    <h6>Gliederung</h6>
+                                    <a t-foreach="state.headings" t-as="h" t-key="h.id" href="#"
+                                       t-attf-class="o_wm_toc o_wm_toc_{{ h.level }}"
+                                       t-on-click.prevent="() => this.scrollTo(h.id)" t-esc="h.text"/>
+                                </section>
+                                <section>
+                                    <h6>Verlinkt von <span class="badge text-bg-light" t-esc="state.backlinks.length"/></h6>
+                                    <div t-if="!state.backlinks.length" class="text-muted small">Keine Rückverweise.</div>
+                                    <a t-foreach="state.backlinks" t-as="b" t-key="b.path" href="#" class="o_wm_backlink"
+                                       t-on-click.prevent="() => this.openPage(b.path)">
+                                        <div class="fw-semibold"><i class="fa fa-file-text-o me-1"/><t t-esc="b.name"/></div>
+                                        <div class="small text-muted text-truncate" t-esc="b.snippet"/>
+                                    </a>
+                                </section>
+                            </t>
+                            <CommentsPanel t-else="" path="state.page.path" pendingQuote="state.pendingQuote"
+                                           onQuoteUsed="() => state.pendingQuote = null"
+                                           onCountChange="(n) => { state.commentCount = n; state.page.meta.comment_count = n; }"
+                                           onHighlight.bind="onCommentQuotes"/>
+                        </aside>
+                    </div>
+                </main>
+            </t>
+        </div>
+    </t>
+
+    <!-- ================================================================ -->
+    <!-- Baumknoten                                                       -->
+    <!-- ================================================================ -->
+    <t t-name="wissensmanagement.TreeNode">
+        <div class="o_wm_node">
+            <div class="o_wm_node_row"
+                 t-att-class="{
+                     active: isActive,
+                     o_wm_drop: appState.dropTarget === node.path and appState.dropPos === 'inside',
+                     o_wm_drop_before: appState.dropTarget === node.path and appState.dropPos === 'before',
+                     o_wm_drop_after: appState.dropTarget === node.path and appState.dropPos === 'after',
+                     o_wm_folder: !node.is_page }"
+                 t-attf-style="padding-left: {{ 6 + props.depth * 14 }}px"
+                 draggable="true"
+                 t-on-click="open"
+                 t-on-dragstart="onDragStart" t-on-dragend="onDragEnd"
+                 t-on-dragover="onDragOver" t-on-dragleave="onDragLeave" t-on-drop="onDrop">
+                <span class="o_wm_caret" t-on-click="toggle">
+                    <i t-if="node.children.length" t-attf-class="fa fa-caret-{{ isOpen ? 'down' : 'right' }}"/>
+                </span>
+                <i t-attf-class="fa {{ icon }} o_wm_node_icon"/>
+                <span class="o_wm_node_name" t-esc="node.name" t-att-title="node.path"/>
+                <button t-if="app.canWrite" class="o_wm_node_add" title="Unterseite anlegen" t-on-click="addChild">
+                    <i class="fa fa-plus"/>
+                </button>
+            </div>
+            <t t-if="isOpen">
+                <t t-foreach="node.children" t-as="child" t-key="child.path">
+                    <TreeNode node="child" depth="props.depth + 1" app="app"/>
+                </t>
+            </t>
+        </div>
+    </t>
+
+    <!-- ================================================================ -->
+    <!-- Editor                                                           -->
+    <!-- ================================================================ -->
+    <t t-name="wissensmanagement.MarkdownEditor">
+        <div class="o_wm_editor" t-ref="root" t-on-drop="onDrop">
+            <div class="o_wm_editor_host" t-ref="host" t-att-class="{ 'd-none': state.source }"/>
+            <!-- Quelltext-Ansicht: echtes Markdown, so wie es in der .md-Datei steht -->
+            <textarea t-if="state.source" class="o_wm_source_text" spellcheck="false"
+                      t-att-value="state.sourceText" t-on-input="onSourceInput"/>
+
+            <!-- Menü für Chips: Hinweisbox / Seitenlink / Erwähnung -->
+            <div t-if="state.chipMenu" class="o_wm_chipmenu"
+                 t-attf-style="top: {{ state.chipMenu.top }}px; left: {{ state.chipMenu.left }}px">
+                <t t-set="m" t-value="state.chipMenu"/>
+
+                <t t-if="m.kind === 'callout'">
+                    <div class="o_wm_chipmenu_head"><i class="fa fa-info-circle me-1"/>Art der Hinweisbox</div>
+                    <div class="o_wm_callout_grid">
+                        <button t-foreach="CALLOUT_TYPES" t-as="c" t-key="c.type" type="button"
+                                class="o_wm_callout_opt" t-att-class="{ active: m.type === c.type }"
+                                t-attf-style="--c: {{ c.color }}" t-on-click="() => this.setCallout(c.type, null)">
+                            <i t-attf-class="fa {{ c.icon }} me-1"/><t t-esc="c.label"/>
+                        </button>
+                    </div>
+                    <div class="o_wm_chipmenu_head mt-2">Darstellung</div>
+                    <div class="btn-group btn-group-sm w-100">
+                        <button t-foreach="CALLOUT_FOLD" t-as="f" t-key="f.label" type="button" class="btn btn-light"
+                                t-att-class="{ active: m.fold === f.value }" t-on-click="() => this.setCallout(null, f.value)"
+                                t-esc="f.label"/>
+                    </div>
+                    <div class="o_wm_chipmenu_actions">
+                        <button type="button" class="btn btn-light btn-sm ms-auto" t-on-click="chipUnwrap"><i class="fa fa-times me-1"/>Box entfernen (Inhalt behalten)</button>
+                    </div>
+                </t>
+
+                <t t-elif="m.kind === 'columns'">
+                    <div class="o_wm_chipmenu_head"><i class="fa fa-columns me-1"/>Spalten nebeneinander</div>
+                    <div class="o_wm_chipmenu_label">Aufteilung</div>
+                    <div class="o_wm_ratio_grid">
+                        <button t-foreach="COLUMN_RATIOS" t-as="r" t-key="r.label" type="button" class="o_wm_ratio_opt"
+                                t-att-class="{ active: m.meta === r.value }" t-on-click="() => this.setColumnRatio(r.value)">
+                            <span t-attf-class="o_wm_ratio_preview o_wm_cols_{{ r.value or 'eq' }}"><i/><i/></span>
+                            <t t-esc="r.label"/>
+                        </button>
+                    </div>
+                    <div class="d-flex flex-column gap-1 mt-2">
+                        <button type="button" class="btn btn-light btn-sm text-start" t-on-click="chipAddColumn"><i class="fa fa-plus fa-fw me-2"/>Spalte hinzufügen</button>
+                        <button type="button" class="btn btn-light btn-sm text-start" t-on-click="chipUnwrap"><i class="fa fa-bars fa-fw me-2"/>Spalten auflösen (untereinander)</button>
+                    </div>
+                    <small class="text-muted d-block mt-2">Tipp: In eine Spalte klicken und schreiben wie gewohnt.</small>
+                </t>
+
+                <t t-elif="m.kind === 'col'">
+                    <div class="o_wm_chipmenu_head"><i class="fa fa-square-o me-1"/>Spalte</div>
+                    <div class="d-flex flex-column gap-1">
+                        <button type="button" class="btn btn-light btn-sm text-start" t-on-click="chipRemoveColumn"><i class="fa fa-trash-o fa-fw me-2"/>Diese Spalte entfernen</button>
+                    </div>
+                    <small class="text-muted d-block mt-2">Aufteilung und weitere Spalten: auf „Spalten“ oben klicken.</small>
+                </t>
+
+                <t t-elif="m.kind === 'center'">
+                    <div class="o_wm_chipmenu_head"><i class="fa fa-align-center me-1"/>Zentrierter Bereich</div>
+                    <button type="button" class="btn btn-light btn-sm w-100 text-start" t-on-click="chipUnwrap"><i class="fa fa-align-left fa-fw me-2"/>Zentrierung aufheben</button>
+                </t>
+
+                <t t-elif="m.kind === 'wikilink'">
+                    <div class="o_wm_chipmenu_head">
+                        <i t-attf-class="fa {{ m.isImage ? 'fa-picture-o' : 'fa-book' }} me-1"/>
+                        <t t-if="m.isImage">Bild</t><t t-else="">Link zu Wissensseite</t>
+                    </div>
+                    <label class="o_wm_chipmenu_label">Seite / Datei</label>
+                    <div class="position-relative">
+                        <input class="form-control form-control-sm" t-att-value="m.pageQuery or m.target"
+                               placeholder="Seite suchen …" t-on-input="searchChipPage"/>
+                        <div t-if="m.pageResults.length" class="o_wm_chipmenu_results">
+                            <a t-foreach="m.pageResults" t-as="r" t-key="r" href="#" t-on-mousedown.prevent="() => this.chooseChipPage(r)">
+                                <i class="fa fa-file-text-o me-1"/><t t-esc="stripMd(r)"/>
+                            </a>
+                        </div>
+                    </div>
+                    <small t-if="!m.resolved" class="text-warning d-block mt-1"><i class="fa fa-exclamation-triangle me-1"/>Seite existiert (noch) nicht</small>
+                    <t t-if="!m.isImage">
+                        <label class="o_wm_chipmenu_label">Abschnitt</label>
+                        <select class="form-select form-select-sm" t-model="m.anchor">
+                            <option value="">— ganze Seite —</option>
+                            <option t-foreach="m.headings" t-as="h" t-key="h_index" t-att-value="h.text"
+                                    t-esc="'\u00A0\u00A0'.repeat(h.level - 1) + h.text"/>
+                        </select>
+                        <label class="o_wm_chipmenu_label">Angezeigter Text</label>
+                        <input class="form-control form-control-sm" t-model="m.alias" placeholder="(Seitenname)"
+                               t-on-keydown="(ev) => ev.key === 'Enter' and this.applyWikilink()"/>
+                        <label class="form-check mt-2">
+                            <input type="checkbox" class="form-check-input" t-model="m.embed"/>
+                            Inhalt der Seite einbetten statt nur verlinken
+                        </label>
+                    </t>
+                    <t t-else="">
+                        <label class="o_wm_chipmenu_label">Breite in Pixeln (leer = Originalgröße)</label>
+                        <input class="form-control form-control-sm" t-model="m.width" placeholder="z. B. 300"
+                               t-on-keydown="(ev) => ev.key === 'Enter' and this.applyWikilink()"/>
+                    </t>
+                    <div class="o_wm_chipmenu_actions">
+                        <button type="button" class="btn btn-primary btn-sm" t-on-click="applyWikilink">Übernehmen</button>
+                        <button t-if="m.resolved" type="button" class="btn btn-light btn-sm" t-on-click="chipOpen"><i class="fa fa-external-link me-1"/>Öffnen</button>
+                        <button type="button" class="btn btn-light btn-sm ms-auto" title="Link entfernen, Text behalten" t-on-click="chipToPlainText"><i class="fa fa-unlink"/></button>
+                    </div>
+                </t>
+
+                <t t-else="">
+                    <div class="o_wm_chipmenu_head"><i class="fa fa-at me-1"/>Erwähnung</div>
+                    <div class="fw-semibold mb-2">@<t t-esc="m.name"/></div>
+                    <div class="d-flex flex-column gap-1">
+                        <button type="button" class="btn btn-light btn-sm text-start" t-on-click="chipOpen"><i class="fa fa-external-link fa-fw me-2"/>Datensatz öffnen</button>
+                        <button type="button" class="btn btn-light btn-sm text-start" t-on-click="chipReplaceMention"><i class="fa fa-exchange fa-fw me-2"/>Anderen Datensatz wählen</button>
+                        <button type="button" class="btn btn-light btn-sm text-start" t-on-click="chipToPlainText"><i class="fa fa-unlink fa-fw me-2"/>Nur Text behalten</button>
+                    </div>
+                </t>
+            </div>
+            <input t-ref="fileInput" type="file" multiple="multiple" class="d-none" t-on-change="onFileChosen"/>
+            <div t-if="state.suggest" class="o_wm_suggest"
+                 t-attf-style="top: {{ state.suggest.top }}px; left: {{ state.suggest.left }}px">
+                <div class="o_wm_suggest_head">
+                    <t t-if="state.suggest.kind === 'page'"><i class="fa fa-book me-1"/>Wissensseite verlinken</t>
+                    <t t-elif="state.suggest.kind === 'slash'"><i class="fa fa-magic me-1"/>Einfügen</t>
+                    <t t-elif="state.suggest.kind === 'template'"><i class="fa fa-clone me-1"/>Vorlage einfügen</t>
+                    <t t-elif="state.suggest.items.length and state.suggest.items[0].value.category"><i class="fa fa-at me-1"/>Was möchtest du erwähnen? · oder einfach den Namen tippen</t>
+                    <t t-else=""><i class="fa fa-at me-1"/>Odoo-Datensatz erwähnen</t>
+                </div>
+                <a t-foreach="state.suggest.items" t-as="item" t-key="item_index" href="#"
+                   class="o_wm_suggest_item" t-att-class="{ active: item_index === state.suggest.active }"
+                   t-on-mousedown.prevent="() => this.applySuggestion(item)">
+                    <img t-if="item.value.image" class="o_wm_suggest_img" t-att-src="item.value.image" alt=""/>
+                    <span t-else="" class="o_wm_suggest_img o_wm_suggest_icon">
+                        <i t-attf-class="fa {{ item.value.icon or 'fa-file-text-o' }}"/>
+                    </span>
+                    <span class="o_wm_suggest_text">
+                        <span class="o_wm_suggest_label" t-esc="item.label"/>
+                        <span class="o_wm_suggest_sub" t-esc="item.sub"/>
+                    </span>
+                </a>
+            </div>
+            <div class="o_wm_editor_footer small text-muted">
+                <span><t t-esc="state.words"/> Wörter</span>
+                <span t-if="!state.peers.length" class="ms-3 d-none d-md-inline"><b>/</b> Befehle · <b>[[</b> Seite verlinken · <b>@</b> Erwähnung · Strg+S speichern · Strg+E Lesemodus · speichert automatisch</span>
+                <span t-if="state.peers.length" class="ms-3 o_wm_live_peers" title="Diese Personen schreiben gerade live mit">
+                    <i class="fa fa-circle text-success me-1 o_wm_live_dot"/>Live mit
+                    <t t-foreach="state.peers" t-as="peer" t-key="peer.id">
+                        <span class="o_wm_live_peer" t-att-style="'background-color:' + userColor(peer.id)" t-esc="peer.name"/>
+                    </t>
+                </span>
+                <span t-if="state.peers.length and !state.source" class="ms-auto text-nowrap" title="Während andere live mitschreiben, ist die Quelltext-Ansicht gesperrt.">Quelltext gesperrt</span>
+                <a t-else="" href="#" class="ms-auto" t-on-click.prevent="toggleSource"
+                   t-esc="state.source ? 'Zurück zur normalen Ansicht' : 'Markdown-Quelltext anzeigen'"/>
+            </div>
+        </div>
+    </t>
+
+    <!-- ================================================================ -->
+    <!-- Dialoge                                                          -->
+    <!-- ================================================================ -->
+    <t t-name="wissensmanagement.PromptDialog">
+        <Dialog title="props.title" size="'md'">
+            <label t-if="props.label" class="form-label" t-esc="props.label"/>
+            <input t-ref="input" class="form-control" t-model="state.value" t-on-keydown="onKeydown"/>
+            <t t-set-slot="footer">
+                <button class="btn btn-primary" t-on-click="confirm" t-esc="props.confirmLabel or 'OK'"/>
+                <button class="btn btn-secondary" t-on-click="props.close">Abbrechen</button>
+            </t>
+        </Dialog>
+    </t>
+
+    <t t-name="wissensmanagement.CreatePageDialog">
+        <Dialog title="'Neue Seite'" size="'lg'">
+            <div class="row g-3">
+                <div class="col-md-7">
+                    <label class="form-label fw-semibold">Titel</label>
+                    <input t-ref="input" class="form-control form-control-lg" t-model="state.title"
+                           placeholder="z. B. Kunde Müller GmbH" t-on-keydown="onKeydown"/>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label fw-semibold">Ablegen unter</label>
+                    <select class="form-select form-select-lg" t-model="state.parent">
+                        <option value="">— Oberste Ebene —</option>
+                        <option t-foreach="parents" t-as="p" t-key="p.path" t-att-value="p.path"
+                                t-esc="'  '.repeat(p.depth) + (p.is_page ? '📄 ' : '📁 ') + p.name"/>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-4">
+                <div class="d-flex align-items-center mb-2">
+                    <label class="form-label fw-semibold mb-0">Vorlage verwenden?</label>
+                    <input t-if="props.templates.length > 6" class="form-control form-control-sm ms-auto w-auto"
+                           placeholder="Vorlage suchen …" t-model="state.filter"/>
+                </div>
+                <div class="o_wm_template_grid">
+                    <a href="#" class="o_wm_template" t-att-class="{ active: !state.template }"
+                       t-on-click.prevent="() => this.selectTemplate('')">
+                        <i class="fa fa-file-o fa-2x mb-2"/>
+                        <span>Leere Seite</span>
+                    </a>
+                    <a t-foreach="filteredTemplates" t-as="t" t-key="t.path" href="#" class="o_wm_template"
+                       t-att-class="{ active: state.template === t.path }" t-on-click.prevent="() => this.selectTemplate(t.path)"
+                       t-on-dblclick.prevent="() => { this.selectTemplate(t.path); this.confirm(); }">
+                        <i class="fa fa-clone fa-2x mb-2"/>
+                        <span t-esc="t.name"/>
+                        <small t-if="t.has_children" class="text-muted">inkl. Unterseiten</small>
+                    </a>
+                </div>
+                <div t-if="!props.templates.length" class="text-muted small mt-2">
+                    Noch keine Vorlagen. Lege Seiten im Vorlagen-Ordner an – sie erscheinen dann hier.
+                    Platzhalter: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{time}}</code>, <code>{{date:DD.MM.YYYY}}</code>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <button class="btn btn-primary" t-on-click="confirm">Seite anlegen</button>
+                <button class="btn btn-secondary" t-on-click="props.close">Abbrechen</button>
+            </t>
+        </Dialog>
+    </t>
+
+    <t t-name="wissensmanagement.MoveDialog">
+        <Dialog title="'„' + props.name + '“ verschieben'" size="'md'">
+            <input class="form-control mb-2" placeholder="Ziel suchen …" t-model="state.filter"/>
+            <div class="o_wm_move_list">
+                <a href="#" class="o_wm_move_item" t-att-class="{ active: state.target === '' }"
+                   t-on-click.prevent="() => state.target = ''" t-on-dblclick.prevent="() => { state.target = ''; this.confirm(); }">
+                    <i class="fa fa-home me-2"/>Oberste Ebene
+                </a>
+                <a t-foreach="filtered" t-as="t" t-key="t.path" href="#" class="o_wm_move_item"
+                   t-att-class="{ active: state.target === t.path }"
+                   t-attf-style="padding-left: {{ 10 + (state.filter ? 0 : t.depth * 16) }}px"
+                   t-on-click.prevent="() => state.target = t.path"
+                   t-on-dblclick.prevent="() => { state.target = t.path; this.confirm(); }">
+                    <i t-attf-class="fa {{ t.is_page ? 'fa-file-text-o' : 'fa-folder-o' }} me-2"/>
+                    <t t-esc="t.name"/>
+                </a>
+            </div>
+            <t t-set-slot="footer">
+                <button class="btn btn-primary" t-att-disabled="state.target === null" t-on-click="confirm">Hierher verschieben</button>
+                <button class="btn btn-secondary" t-on-click="props.close">Abbrechen</button>
+            </t>
+        </Dialog>
+    </t>
+
+    <t t-name="wissensmanagement.ConflictDialog">
+        <Dialog title="'Seite wurde zwischenzeitlich geändert'" size="'md'">
+            <p>Die Seite wurde seit dem Öffnen von jemand anderem geändert.</p>
+            <p class="mb-0">Was möchtest du tun?</p>
+            <t t-set-slot="footer">
+                <button class="btn btn-danger" t-on-click="overwrite">Meine Version speichern (überschreiben)</button>
+                <button class="btn btn-secondary" t-on-click="reload">Andere Version laden (meine Änderungen verwerfen)</button>
+            </t>
+        </Dialog>
+    </t>
+</templates>

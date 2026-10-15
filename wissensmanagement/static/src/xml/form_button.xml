@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-inherit="web.FormView" t-inherit-mode="extension">
+        <xpath expr="//CogMenu" position="after">
+            <WissenFormButton t-if="model.root.resId" resModel="props.resModel" resId="model.root.resId"/>
+        </xpath>
+    </t>
+
+    <t t-name="wissensmanagement.FormButton">
+        <Dropdown t-if="state.pages.length" position="'bottom-start'">
+            <button class="btn btn-sm btn-outline-secondary o_wm_form_button ms-1" title="Wissensseiten, die diesen Datensatz erwähnen">
+                <i class="fa fa-book me-1"/>Wissen <span class="badge rounded-pill text-bg-secondary ms-1" t-esc="state.pages.length"/>
+            </button>
+            <t t-set-slot="content">
+                <div class="dropdown-header">Erwähnt in</div>
+                <DropdownItem t-foreach="state.pages" t-as="p" t-key="p.path" onSelected="() => this.open(p.path)">
+                    <div class="d-flex flex-column">
+                        <span><i class="fa fa-file-text-o me-2"/><t t-esc="p.name"/></span>
+                        <small class="text-muted ms-4">
+                            <t t-esc="p.path"/><t t-if="p.date"> · <t t-esc="relTime(p.date)"/></t><t t-if="p.editor"> · <t t-esc="p.editor"/></t>
+                        </small>
+                    </div>
+                </DropdownItem>
+            </t>
+        </Dropdown>
+    </t>
+</templates>

@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Versionsverlauf -->
+    <t t-name="wissensmanagement.HistoryDialog">
+        <Dialog title="'Versionsverlauf'" size="'xl'">
+            <div t-if="state.loading" class="text-muted">Lade …</div>
+            <div t-elif="!state.versions.length" class="text-muted">
+                Noch keine Versionen. Versionen entstehen, sobald die Seite bearbeitet wird.
+            </div>
+            <div t-else="" class="o_wm_history">
+                <div class="o_wm_history_list">
+                    <a t-foreach="state.versions" t-as="v" t-key="v.id" href="#" class="o_wm_history_item"
+                       t-att-class="{ active: state.selected and state.selected.id === v.id }" t-on-click.prevent="() => this.select(v)">
+                        <img t-if="v.user_image" class="o_wm_mini_avatar" t-att-src="v.user_image" alt=""/>
+                        <span t-else="" class="o_wm_mini_avatar o_wm_mini_icon"><i class="fa fa-pencil-square-o"/></span>
+                        <span class="d-flex flex-column">
+                            <span class="fw-semibold" t-esc="absTime(v.date)"/>
+                            <small class="text-muted"><t t-esc="v.user or v.kind_label"/> · <t t-esc="relTime(v.date)"/></small>
+                        </span>
+                        <span t-if="v_index === 0" class="badge text-bg-light ms-auto">neueste</span>
+                    </a>
+                </div>
+                <div class="o_wm_history_preview">
+                    <div class="btn-group btn-group-sm mb-2">
+                        <button class="btn btn-light" t-att-class="{ active: state.view === 'diff' }" t-on-click="() => this.setView('diff')">Änderungen bis heute</button>
+                        <button class="btn btn-light" t-att-class="{ active: state.view === 'render' }" t-on-click="() => this.setView('render')">Diese Version ansehen</button>
+                    </div>
+                    <div t-if="state.view === 'diff'" class="o_wm_diff" t-out="state.html"/>
+                    <div t-else="" class="o_wm_content" t-out="state.html"/>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <button t-if="props.canWrite and state.selected" class="btn btn-primary" t-on-click="restore">
+                    <i class="fa fa-undo me-1"/>Diese Version wiederherstellen
+                </button>
+                <button class="btn btn-secondary" t-on-click="props.close">Schließen</button>
+            </t>
+        </Dialog>
+    </t>
+
+    <!-- Freigabe -->
+    <t t-name="wissensmanagement.ShareDialog">
+        <Dialog title="'„' + props.name + '“ freigeben'" size="'md'">
+            <t t-if="state.info">
+                <div class="o_wm_share_modes">
+                    <label t-foreach="[['off', 'fa-lock', 'Nicht freigegeben', 'Nur interne Benutzer mit Zugriff auf das Wissensmanagement.'],
+                                       ['link', 'fa-globe', 'Jeder mit dem Link', 'Öffentliche Leseansicht ohne Login. @-Erwähnungen zeigen nur den Namen.'],
+                                       ['portal', 'fa-users', 'Ausgewählte Kontakte (Kundenportal)', 'Nur die gewählten Kontakte sehen die Seite nach dem Login unter /my/wissen.']]"
+                           t-as="m" t-key="m[0]" class="o_wm_share_mode" t-att-class="{ active: state.info.mode === m[0] }">
+                        <input type="radio" name="wm_share" class="form-check-input" t-att-checked="state.info.mode === m[0]"
+                               t-att-disabled="!props.canWrite" t-on-change="() => this.setMode(m[0])"/>
+                        <i t-attf-class="fa {{ m[1] }} fa-fw mx-2"/>
+                        <span><b t-esc="m[2]"/><br/><small class="text-muted" t-esc="m[3]"/></span>
+                    </label>
+                </div>
+                <div t-if="state.info.url" class="input-group mt-3">
+                    <input class="form-control" readonly="1" t-att-value="state.info.url"/>
+                    <button class="btn btn-primary" t-on-click="() => this.copy(state.info.url)"><i class="fa fa-copy me-1"/>Kopieren</button>
+                    <button t-if="props.canWrite" class="btn btn-light" title="Neuen Link erzeugen (alter wird ungültig)" t-on-click="regenerate"><i class="fa fa-refresh"/></button>
+                </div>
+                <div t-if="state.info.mode === 'portal'" class="mt-3">
+                    <label class="form-label fw-semibold">Kontakte mit Zugriff</label>
+                    <div class="d-flex flex-wrap gap-1 mb-2">
+                        <span t-foreach="state.info.partners" t-as="p" t-key="p.id" class="badge rounded-pill text-bg-light">
+                            <t t-esc="p.name"/>
+                            <i t-if="props.canWrite" class="fa fa-times ms-1" role="button" t-on-click="() => this.removePartner(p)"/>
+                        </span>
+                        <span t-if="!state.info.partners.length" class="text-muted small">Noch niemand.</span>
+                    </div>
+                    <div t-if="props.canWrite" class="position-relative">
+                        <input class="form-control form-control-sm" placeholder="Kontakt hinzufügen …" t-att-value="state.term" t-on-input="searchPartner"/>
+                        <div t-if="state.suggestions.length" class="o_wm_suggest" style="top: 100%; left: 0">
+                            <a t-foreach="state.suggestions" t-as="s" t-key="s.id" href="#" class="o_wm_suggest_item"
+                               t-on-click.prevent="() => this.addPartner(s)"><span class="o_wm_suggest_label" t-esc="s.name"/></a>
+                        </div>
+                    </div>
+                    <div t-if="state.info.portal_url" class="input-group input-group-sm mt-2">
+                        <input class="form-control" readonly="1" t-att-value="state.info.portal_url"/>
+                        <button class="btn btn-light" t-on-click="() => this.copy(state.info.portal_url)"><i class="fa fa-copy"/></button>
+                    </div>
+                    <small class="text-muted d-block mt-1">Kontakte brauchen einen Portal-Zugang (Kontakt › Aktion › Portalzugriff gewähren).</small>
+                </div>
+            </t>
+            <t t-set-slot="footer">
+                <button class="btn btn-secondary" t-on-click="props.close">Fertig</button>
+            </t>
+        </Dialog>
+    </t>
+
+    <!-- Checkbox -> Aufgabe -->
+    <t t-name="wissensmanagement.TaskDialog">
+        <Dialog title="'Als Odoo-Aufgabe anlegen'" size="'md'">
+            <label class="form-label fw-semibold">Aufgabe</label>
+            <input class="form-control mb-3" t-model="state.name"/>
+            <label class="form-label fw-semibold">Projekt</label>
+            <select class="form-select mb-3" t-model="state.project_id">
+                <option value="">— ohne Projekt (private Aufgabe) —</option>
+                <option t-foreach="state.projects" t-as="p" t-key="p.id" t-att-value="p.id" t-esc="p.display_name"/>
+            </select>
+            <div class="d-flex gap-3 align-items-center">
+                <label class="form-check"><input type="checkbox" class="form-check-input" t-model="state.me"/> Mir zuweisen</label>
+                <label class="d-flex align-items-center gap-2 ms-auto">Deadline <input type="date" class="form-control form-control-sm" t-model="state.deadline"/></label>
+            </div>
+            <small class="text-muted d-block mt-3">Die Aufgabe wird hinter der Checkbox als @-Erwähnung verlinkt – mit Live-Status.</small>
+            <t t-set-slot="footer">
+                <button class="btn btn-primary" t-att-disabled="!state.name.trim()" t-on-click="confirm">Aufgabe anlegen</button>
+                <button class="btn btn-secondary" t-on-click="props.close">Abbrechen</button>
+            </t>
+        </Dialog>
+    </t>
+
+    <!-- In Chatter teilen -->
+    <t t-name="wissensmanagement.ChatterDialog">
+        <Dialog title="'„' + props.name + '“ im Chatter teilen'" size="'md'">
+            <label class="form-label fw-semibold">Datensatz (Kontakt, Aufgabe, Angebot …)</label>
+            <input class="form-control" placeholder="z. B. „Müller“ oder „aufgabe bank“" t-att-value="state.term" t-on-input="search"/>
+            <div class="o_wm_record_results">
+                <a t-foreach="state.results" t-as="r" t-key="r.model + r.id" href="#" class="o_wm_suggest_item"
+                   t-att-class="{ active: state.selected and state.selected.model === r.model and state.selected.id === r.id }"
+                   t-on-click.prevent="() => state.selected = r">
+                    <img t-if="r.image" class="o_wm_suggest_img" t-att-src="r.image" alt=""/>
+                    <span t-else="" class="o_wm_suggest_img o_wm_suggest_icon"><i t-attf-class="fa {{ r.icon }}"/></span>
+                    <span class="o_wm_suggest_text"><span class="o_wm_suggest_label" t-esc="r.name"/><span class="o_wm_suggest_sub" t-esc="r.model_label"/></span>
+                </a>
+            </div>
+            <label class="form-label fw-semibold mt-3">Notiz (optional)</label>
+            <textarea class="form-control" rows="2" t-model="state.note" placeholder="z. B. Hier die Zusammenfassung vom Kickoff"/>
+            <t t-set-slot="footer">
+                <button class="btn btn-primary" t-att-disabled="!state.selected" t-on-click="confirm">Im Chatter posten</button>
+                <button class="btn btn-secondary" t-on-click="props.close">Abbrechen</button>
+            </t>
+        </Dialog>
+    </t>
+
+    <!-- Kommentare -->
+    <t t-name="wissensmanagement.CommentsPanel">
+        <div class="o_wm_comments">
+            <div class="o_wm_comment_new">
+                <div t-if="props.pendingQuote" class="o_wm_comment_quote">
+                    „<t t-esc="props.pendingQuote"/>“
+                    <i class="fa fa-times ms-1" role="button" t-on-click="props.onQuoteUsed"/>
+                </div>
+                <textarea class="form-control form-control-sm" rows="2" t-model="state.body"
+                          placeholder="Kommentar schreiben … (Strg+Enter) – Tipp: Text im Dokument markieren, um ihn zu kommentieren"
+                          t-on-keydown="(ev) => this.onKeydown(ev, () => this.add())"/>
+                <button class="btn btn-primary btn-sm mt-1" t-att-disabled="!state.body.trim()" t-on-click="add">Kommentieren</button>
+            </div>
+            <div t-if="!visibleThreads.length" class="text-muted small mt-3">Keine offenen Kommentare.</div>
+            <div t-foreach="visibleThreads" t-as="t" t-key="t.id" class="o_wm_thread" t-att-class="{ o_wm_thread_resolved: t.resolved }">
+                <div t-if="t.quote" class="o_wm_comment_quote">„<t t-esc="t.quote"/>“</div>
+                <t t-foreach="[t].concat(t.replies)" t-as="c" t-key="c.id">
+                    <div class="o_wm_comment">
+                        <img class="o_wm_mini_avatar" t-att-src="c.author_image" alt=""/>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="o_wm_comment_head">
+                                <b t-esc="c.author"/> <span class="text-muted" t-esc="relTime(c.date)"/>
+                                <i t-if="c.can_edit" class="fa fa-trash-o ms-auto text-muted" role="button" title="Löschen" t-on-click="() => this.remove(c)"/>
+                            </div>
+                            <div class="o_wm_comment_body" t-esc="c.body"/>
+                        </div>
+                    </div>
+                </t>
+                <div class="o_wm_thread_actions">
+                    <a href="#" t-on-click.prevent="() => { state.replyTo = state.replyTo === t.id ? null : t.id; state.replyBody = ''; }">Antworten</a>
+                    <a href="#" t-on-click.prevent="() => this.toggleResolved(t)" t-esc="t.resolved ? 'Wieder öffnen' : 'Erledigt'"/>
+                </div>
+                <div t-if="state.replyTo === t.id" class="mt-1">
+                    <textarea class="form-control form-control-sm" rows="2" t-model="state.replyBody" placeholder="Antwort …"
+                              t-on-keydown="(ev) => this.onKeydown(ev, () => this.reply(t))"/>
+                    <button class="btn btn-primary btn-sm mt-1" t-on-click="() => this.reply(t)">Antworten</button>
+                </div>
+            </div>
+            <a t-if="resolvedCount" href="#" class="small d-block mt-3" t-on-click.prevent="() => state.showResolved = !state.showResolved">
+                <t t-if="state.showResolved">Erledigte ausblenden</t><t t-else=""><t t-esc="resolvedCount"/> erledigte anzeigen</t>
+            </a>
+        </div>
+    </t>
+
+    <!-- Übersicht -->
+    <t t-name="wissensmanagement.VaultOverview">
+        <div class="o_wm_overview">
+            <div class="o_wm_overview_tabs">
+                <button t-foreach="[['graph', 'fa-share-alt', 'Graph'], ['tags', 'fa-tags', 'Tags'], ['orphans', 'fa-chain-broken', 'Verwaiste Seiten'], ['broken', 'fa-unlink', 'Kaputte Links']]"
+                        t-as="t" t-key="t[0]" t-att-class="{ active: state.tab === t[0] }" t-on-click="() => this.setTab(t[0])">
+                    <i t-attf-class="fa {{ t[1] }} me-1"/><t t-esc="t[2]"/>
+                    <span t-if="state.stats and t[0] === 'tags'" class="o_wm_count" t-esc="state.stats.tags.length"/>
+                    <span t-if="state.stats and t[0] === 'orphans'" class="o_wm_count" t-esc="state.stats.orphans.length"/>
+                    <span t-if="state.stats and t[0] === 'broken'" class="o_wm_count" t-esc="state.stats.broken.length"/>
+                </button>
+                <span t-if="state.stats" class="ms-auto text-muted small"><t t-esc="state.stats.page_count"/> Seiten</span>
+            </div>
+            <div t-if="!state.stats" class="o_wm_center text-muted">Lade …</div>
+            <t t-else="">
+                <div t-if="state.tab === 'graph'" class="o_wm_graph">
+                    <canvas t-ref="canvas"/>
+                    <div class="o_wm_graph_hint">Klick öffnet eine Seite · Ziehen verschiebt · Mausrad zoomt · Farbe = oberster Ordner</div>
+                </div>
+                <div t-elif="state.tab === 'tags'" class="o_wm_overview_body">
+                    <div t-if="!state.stats.tags.length" class="text-muted">Noch keine #Tags vergeben.</div>
+                    <div class="o_wm_tagcloud">
+                        <div t-foreach="state.stats.tags" t-as="t" t-key="t.tag" class="o_wm_tagcard">
+                            <a href="#" class="o_wm_tagcard_head" t-attf-style="font-size: {{ tagSize(t) }}" t-on-click.prevent="() => props.onTag(t.tag)">
+                                #<t t-esc="t.tag"/> <span class="o_wm_count" t-esc="t.pages.length"/>
+                            </a>
+                            <a t-foreach="t.pages.slice(0, 8)" t-as="p" t-key="p.path" href="#" class="o_wm_tagcard_page"
+                               t-on-click.prevent="() => props.onOpen(p.path)" t-esc="p.name"/>
+                            <small t-if="t.pages.length > 8" class="text-muted">+ <t t-esc="t.pages.length - 8"/> weitere</small>
+                        </div>
+                    </div>
+                </div>
+                <div t-elif="state.tab === 'orphans'" class="o_wm_overview_body">
+                    <p class="text-muted">Seiten, auf die keine andere Seite verlinkt und die selbst auf nichts verlinken.</p>
+                    <div t-if="!state.stats.orphans.length" class="text-muted">Keine – alles ist vernetzt. 🎉</div>
+                    <a t-foreach="state.stats.orphans" t-as="o" t-key="o.path" href="#" class="o_wm_list_row" t-on-click.prevent="() => props.onOpen(o.path)">
+                        <i class="fa fa-file-text-o me-2"/><b t-esc="o.name"/><span class="text-muted ms-2 small" t-esc="o.path"/>
+                    </a>
+                </div>
+                <div t-else="" class="o_wm_overview_body">
+                    <p class="text-muted">Links auf Seiten, die es (noch) nicht gibt.</p>
+                    <div t-if="!state.stats.broken.length" class="text-muted">Keine kaputten Links. 🎉</div>
+                    <a t-foreach="state.stats.broken" t-as="b" t-key="b.path + b.target + b_index" href="#" class="o_wm_list_row" t-on-click.prevent="() => props.onOpen(b.path)">
+                        <i class="fa fa-unlink text-danger me-2"/><b t-esc="b.name"/>
+                        <span class="mx-2 text-muted">→</span><span class="o_wm_broken_target">[[<t t-esc="b.target"/>]]</span>
+                    </a>
+                </div>
+            </t>
+        </div>
+    </t>
+    <!-- Papierkorb -->
+    <t t-name="wissensmanagement.TrashDialog">
+        <Dialog title="'Papierkorb'" size="'lg'">
+            <div t-if="state.loading" class="text-muted">Lade …</div>
+            <div t-elif="!state.items.length" class="text-muted py-4 text-center">
+                <i class="fa fa-trash-o fa-2x d-block mb-2"/>Der Papierkorb ist leer.
+            </div>
+            <t t-else="">
+                <p class="text-muted small">Gelöschte Seiten bleiben <t t-esc="trashDays"/> Tage hier und werden danach automatisch endgültig gelöscht.
+                    Beim Wiederherstellen kommen Unterseiten, Versionen und Kommentare mit zurück.</p>
+                <div class="list-group o_wm_trash_list">
+                    <div t-foreach="state.items" t-as="item" t-key="item.id" class="list-group-item d-flex align-items-center gap-3">
+                        <i t-att-class="'fa fa-fw text-muted ' + (item.is_page ? 'fa-file-text-o' : 'fa-folder-o')"/>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="fw-semibold text-truncate" t-esc="item.name"/>
+                            <small class="text-muted">
+                                <t t-if="item.origin">aus <t t-esc="item.origin"/> · </t>gelöscht <t t-esc="relTime(item.date)"/><t t-if="item.user"> von <t t-esc="item.user"/></t> · noch <t t-esc="daysLeft(item)"/> Tage
+                            </small>
+                        </div>
+                        <button class="btn btn-sm btn-primary o_wm_trash_restore" t-on-click="() => this.restore(item)"><i class="fa fa-undo me-1"/>Wiederherstellen</button>
+                        <button class="btn btn-sm btn-light text-danger" title="Endgültig löschen" t-on-click="() => this.purge(item)"><i class="fa fa-times"/></button>
+                    </div>
+                </div>
+            </t>
+            <t t-set-slot="footer">
+                <t t-if="props.isManager and state.items.length">
+                    <button t-if="!state.confirmEmpty" class="btn btn-light text-danger" t-on-click="() => this.state.confirmEmpty = true">Papierkorb leeren</button>
+                    <button t-else="" class="btn btn-danger" t-on-click="emptyAll">Wirklich alles endgültig löschen</button>
+                </t>
+                <button class="btn btn-secondary" t-on-click="props.close">Schließen</button>
+            </t>
+        </Dialog>
+    </t>
+
+</templates>

@@ -1,0 +1,10 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_wissen_page_manager,wissen.page manager,model_wissen_page,group_manager,1,1,1,1
+access_wissen_mention_manager,wissen.mention manager,model_wissen_mention,group_manager,1,1,1,1
+access_wissen_version_manager,wissen.version manager,model_wissen_version,group_manager,1,1,1,1
+access_wissen_comment_manager,wissen.comment manager,model_wissen_comment,group_manager,1,1,1,1
+access_wissen_presence_manager,wissen.presence manager,model_wissen_presence,group_manager,1,1,1,1
+access_wissen_access_rule_manager,wissen.access.rule manager,model_wissen_access_rule,group_manager,1,1,1,1
+access_wissen_trash_manager,wissen.trash manager,model_wissen_trash,group_manager,1,1,1,1
+access_wissen_collab_session_manager,wissen.collab.session manager,model_wissen_collab_session,group_manager,1,1,1,1
+access_wissen_collab_step_manager,wissen.collab.step manager,model_wissen_collab_step,group_manager,1,1,1,1

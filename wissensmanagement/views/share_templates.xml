@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Eigenständige Seite für freigegebene Wissensseiten, Portal und Druckansicht.
+         Bewusst ohne Website-/Portal-Layout, damit das Modul nur von base_setup/web abhängt. -->
+    <template id="share_layout" name="Wissensmanagement: Freigabe-Layout">&lt;!DOCTYPE html&gt;
+        <html lang="de" t-attf-style="--accent: {{ style['accent'] }}; --link: {{ style['wikilink'] }}; --mention: {{ style['mention'] }}; --width: {{ style['width'] }}px">
+            <head>
+                <meta charset="utf-8"/>
+                <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                <meta name="robots" content="noindex"/>
+                <title t-esc="title"/>
+                <link rel="stylesheet" href="/wissensmanagement/static/src/public/share_page.css"/>
+            </head>
+            <body>
+                <header class="noprint">
+                    <span>📖</span>
+                    <span t-esc="header"/>
+                    <a t-if="back_url" t-att-href="back_url" style="margin-left:auto" t-esc="back_label"/>
+                </header>
+                <t t-out="0"/>
+            </body>
+        </html>
+    </template>
+
+    <template id="share_page" name="Wissensmanagement: freigegebene Seite">
+        <t t-call="wissensmanagement.share_layout">
+            <main>
+                <h1 id="t" t-esc="title"/>
+                <!-- Fallback ohne JavaScript: Rohtext -->
+                <div id="c"><pre t-esc="payload['content']"/></div>
+                <div class="meta">
+                    <t t-if="payload.get('updated')">Zuletzt bearbeitet: <t t-esc="payload['updated'][:16]"/></t>
+                    <t t-if="payload.get('editor')"> · <t t-esc="payload['editor']"/></t>
+                </div>
+            </main>
+            <!-- JSON-Daten: "</" ist im Controller maskiert, daher als Markup unbedenklich -->
+            <script type="application/json" id="wm-data" t-out="payload_json"/>
+            <script src="/wissensmanagement/static/lib/marked/marked.umd.js"/>
+            <script src="/web/static/lib/dompurify/DOMpurify.js"/>
+            <script src="/wissensmanagement/static/src/public/share_page.js"/>
+        </t>
+    </template>
+
+    <template id="portal_list" name="Wissensmanagement: Portal-Übersicht">
+        <t t-call="wissensmanagement.share_layout">
+            <main>
+                <h1>Wissen</h1>
+                <div class="list">
+                    <a t-foreach="pages" t-as="p" t-attf-href="/my/wissen/{{ p.share_token }}">📄 <t t-esc="p.name"/></a>
+                    <p t-if="not pages">Es wurden noch keine Seiten für dich freigegeben.</p>
+                </div>
+            </main>
+        </t>
+    </template>
+</odoo>

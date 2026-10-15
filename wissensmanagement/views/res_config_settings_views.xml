@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.wissensmanagement</field>
+        <field name="model">res.config.settings</field>
+        <field name="priority" eval="60"/>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="Wissensmanagement" string="Wissensmanagement" name="wissensmanagement"
+                     logo="/wissensmanagement/static/description/icon.png" groups="wissensmanagement.group_manager">
+                    <block title="Ablage" name="wm_vault_block">
+                        <setting id="wm_vault_path" string="Wissensordner"
+                                 help="Absoluter Pfad auf dem Odoo-Server, in dem die Wissensseiten als Dateien gespeichert werden. Der Odoo-Prozess braucht Lese- und Schreibrechte; der Ordner gehört ins Server-Backup.">
+                            <field name="wm_vault_path" placeholder="/var/lib/odoo/wissen"/>
+                        </setting>
+                        <setting id="wm_template_folder" string="Vorlagen-Ordner"
+                                 help="Unterordner im Wissensordner. Jede .md-Datei darin ist eine Vorlage.">
+                            <field name="wm_template_folder" placeholder="Vorlagen"/>
+                        </setting>
+                        <setting id="wm_attachment_folder" string="Anhänge-Ordner"
+                                 help="Eingefügte Bilder und Dateien werden hier abgelegt.">
+                            <field name="wm_attachment_folder" placeholder="Anhänge"/>
+                        </setting>
+                        <setting id="wm_default_mode" string="Standardmodus"
+                                 help="Mit welchem Modus Seiten geöffnet werden.">
+                            <field name="wm_default_mode" widget="radio" options="{'horizontal': true}"/>
+                        </setting>
+                    </block>
+                    <block title="@-Erwähnungen" name="wm_mention_block">
+                        <setting id="wm_mention_models" string="Erwähnbare Odoo-Modelle"
+                                 help="Kommagetrennte technische Namen, z. B. res.partner,sale.order,crm.lead. Mit @ im Editor durchsuchbar.">
+                            <field name="wm_mention_models"/>
+                        </setting>
+                    </block>
+                    <block title="Stil" name="wm_style_block">
+                        <setting id="wm_style_preset" string="Stil-Vorlage"
+                                 help="Standard: Odoo-Look mit farbigen Links · Notion: ruhig, reduziert, graue Hinweisboxen · Buch: Serifenschrift für lange Texte · Kompakt: wenig Abstand. Wirkt nach dem Neuladen der Wissensmanagement-App.">
+                            <field name="wm_style_preset"/>
+                        </setting>
+                        <setting id="wm_colors" string="Farben"
+                                 help="Akzent, Links zu anderen Wissensseiten und @-Erwähnungen.">
+                            <div class="d-flex flex-column gap-1 mt-2">
+                                <div class="d-flex align-items-center gap-2"><field name="wm_accent_color" widget="color"/><span>Akzent</span></div>
+                                <div class="d-flex align-items-center gap-2"><field name="wm_wikilink_color" widget="color"/><span>Seitenlinks</span></div>
+                                <div class="d-flex align-items-center gap-2"><field name="wm_mention_color" widget="color"/><span>Erwähnungen</span></div>
+                            </div>
+                        </setting>
+                        <setting id="wm_typo" string="Typografie">
+                            <div class="d-flex flex-column gap-1 mt-2">
+                                <div><span class="me-2">Schriftgröße (px)</span><field name="wm_font_size" class="w-25"/></div>
+                                <div><span class="me-2">Max. Textbreite (px)</span><field name="wm_content_width" class="w-25"/></div>
+                            </div>
+                        </setting>
+                        <setting id="wm_custom_css" string="Eigenes CSS"
+                                 help="Optional. Gilt nur innerhalb der App, z. B. .o_wm_content h1 { letter-spacing: -0.02em; }">
+                            <field name="wm_custom_css" placeholder=".o_wm_content h1 { … }"/>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_wm_settings" model="ir.actions.act_window">
+        <field name="name">Einstellungen</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_id" ref="res_config_settings_view_form"/>
+        <field name="view_mode">form</field>
+        <field name="context">{'module': 'wissensmanagement', 'bin_size': False}</field>
+    </record>
+</odoo>
