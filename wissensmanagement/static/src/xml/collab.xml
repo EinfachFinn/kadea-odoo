@@ -113,7 +113,7 @@
     <!-- In Chatter teilen -->
     <t t-name="wissensmanagement.ChatterDialog">
         <Dialog title="'„' + props.name + '“ im Chatter teilen'" size="'md'">
-            <label class="form-label fw-semibold">Datensatz (Kontakt, Aufgabe, Angebot …)</label>
+            <label class="form-label fw-semibold">Datensatz (Kontakt, Aufgabe, Angebot, Post …)</label>
             <input class="form-control" placeholder="z. B. „Müller“ oder „aufgabe bank“" t-att-value="state.term" t-on-input="search"/>
             <div class="o_wm_record_results">
                 <a t-foreach="state.results" t-as="r" t-key="r.model + r.id" href="#" class="o_wm_suggest_item"

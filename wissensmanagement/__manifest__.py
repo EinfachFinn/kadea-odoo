@@ -1,7 +1,7 @@
 {
     "name": "Wissensmanagement",
     "summary": "Wiki direkt in Odoo: Seitenbaum, WYSIWYG-Editor, Vorlagen, Seitenlinks und @-Erwähnungen mit Live-Karten aller Odoo-Datensätze",
-    "version": "19.0.3.0.0",
+    "version": "19.0.3.1.0",
     "category": "Productivity/Knowledge",
     "author": "Kadea",
     "license": "LGPL-3",

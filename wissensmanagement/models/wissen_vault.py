@@ -39,7 +39,8 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 DEFAULT_MENTION_MODELS = (
     "res.partner,res.users,project.project,project.task,sale.order,crm.lead,"
     "purchase.order,account.move,product.template,hr.employee,helpdesk.ticket,"
-    "calendar.event,stock.picking,mrp.production,repair.order,maintenance.equipment"
+    "calendar.event,stock.picking,mrp.production,repair.order,maintenance.equipment,"
+    "social.post,social.account"
 )
 # "@aufgabe bank" -> nur Aufgaben durchsuchen
 # Bereiche für das @-Menü (Reihenfolge = Anzeige). Erstes Kürzel ist das Hauptkürzel.
@@ -60,6 +61,8 @@ MENTION_CATEGORIES = [
     ("mrp.production", ["fertigung"], "Fertigungsaufträge"),
     ("repair.order", ["reparatur"], "Reparaturen"),
     ("maintenance.equipment", ["gerät"], "Geräte (Wartung)"),
+    ("social.post", ["posts", "post", "beitrag", "social"], "Social-Media-Posts"),
+    ("social.account", ["kanal", "konto"], "Social-Media-Konten"),
 ]
 # "@aufgabe bank" -> nur Aufgaben durchsuchen
 MENTION_ALIASES = {alias: model for model, aliases, _label in MENTION_CATEGORIES for alias in aliases}
@@ -70,9 +73,16 @@ MODEL_ICONS = {
     "product.product": "fa-cube", "hr.employee": "fa-id-badge", "helpdesk.ticket": "fa-life-ring",
     "calendar.event": "fa-calendar", "stock.picking": "fa-truck", "mrp.production": "fa-industry",
     "repair.order": "fa-wrench", "maintenance.equipment": "fa-cogs",
+    "social.post": "fa-bullhorn", "social.account": "fa-share-alt",
 }
+# Modelle ohne Namensfeld: @-Suche in diesen Feldern (neueste zuerst), Anzeigename = erste Zeile des Texts
+MENTION_SEARCH_FIELDS = {"social.post": ["message"]}
+MENTION_TEXT_NAME_FIELDS = ("message",)
+MENTION_TEXT_NAME_LENGTH = 60
 # Felder für die Vorschaukarte - generisch, gilt für jedes Modell, das sie besitzt
-CARD_SUBTITLE_FIELDS = ["project_id", "parent_id", "partner_id", "company_name", "job_title", "function", "email"]
+CARD_SUBTITLE_FIELDS = [
+    "project_id", "parent_id", "partner_id", "company_name", "job_title", "function", "email", "account_ids", "media_id",
+]
 CARD_BADGE_FIELDS = ["stage_id", "state", "last_update_status", "kanban_state"]
 EMPTY_BADGE_VALUES = {"to_define", "normal", "none"}
 DEADLINE_FIELDS = {"date_deadline", "invoice_date_due", "validity_date", "date_deadline_order"}
@@ -82,6 +92,7 @@ CARD_FACT_FIELDS = [
     ("email", "E-Mail"), ("phone", "Telefon"), ("mobile", "Mobil"), ("work_email", "E-Mail"),
     ("partner_id", "Kunde"), ("date_order", "Datum"), ("date_start", "Start"),
     ("date", "Datum"), ("start", "Beginn"), ("city", "Ort"), ("default_code", "Referenz"),
+    ("send_post_date", "Geplant"), ("published_date", "Veröffentlicht"),
 ]
 
 # Datumsformate in Vorlagen-Platzhaltern (DD.MM.YYYY usw.) -> strftime
@@ -812,7 +823,7 @@ class WissenVault(models.AbstractModel):
         result = []
         for m in models_:
             try:
-                records = self.env[m["model"]].name_search(term, limit=limit)
+                records = self._mention_name_search(m["model"], term, limit)
             except Exception:  # noqa: BLE001 - ein defektes Modell soll die Suche nicht abbrechen
                 _logger.exception("Wissensmanagement: @-Suche in %s fehlgeschlagen", m["model"])
                 continue
@@ -830,18 +841,40 @@ class WissenVault(models.AbstractModel):
         result.sort(key=lambda r: (not (r["name"] or "").casefold().startswith(q), len(r["name"] or "")))
         return result[:20]
 
+    def _mention_name_search(self, model, term, limit):
+        """name_search, für Modelle ohne Namensfeld (Social-Media-Posts) über den Text."""
+        Model = self.env[model]
+        fnames = [f for f in MENTION_SEARCH_FIELDS.get(model, []) if f in Model._fields]
+        if not fnames:
+            return Model.name_search(term, limit=limit)
+        domain = []
+        if term:
+            domain = ["|"] * (len(fnames) - 1) + [(f, "ilike", term) for f in fnames]
+        return [(rec.id, rec.display_name) for rec in Model.search(domain, limit=limit, order="id desc")]
+
     @staticmethod
     def _short_name(rec):
-        """Eigener Name statt display_name (z. B. "Claude Bot" statt "Kadea, Claude Bot")."""
+        """Eigener Name statt display_name (z. B. "Claude Bot" statt "Kadea, Claude Bot").
+        Ohne Namensfeld (Social-Media-Post): erste Zeile des Texts."""
         f = rec._fields.get("name")
         if f is not None and f.type == "char" and rec.name:
             return rec.name
+        if f is None:
+            for fname in MENTION_TEXT_NAME_FIELDS:
+                text = rec[fname] if fname in rec._fields else False
+                line = next((ln.strip() for ln in str(text or "").splitlines() if ln.strip()), "")
+                if line:
+                    if len(line) > MENTION_TEXT_NAME_LENGTH:
+                        line = line[: MENTION_TEXT_NAME_LENGTH - 1].rstrip() + "…"
+                    return line
         return rec.display_name
 
     def _card_value(self, rec, fname, field):
         value = rec[fname]
         if field.type == "many2one":
             return value.display_name or False
+        if field.type in ("many2many", "one2many"):
+            return ", ".join(value[:5].mapped("display_name")) or False
         if field.type == "selection":
             return dict(field._description_selection(self.env)).get(value) if value else False
         if field.type == "monetary":

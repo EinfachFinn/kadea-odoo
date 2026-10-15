@@ -29,7 +29,7 @@
                     </block>
                     <block title="@-Erwähnungen" name="wm_mention_block">
                         <setting id="wm_mention_models" string="Erwähnbare Odoo-Modelle"
-                                 help="Kommagetrennte technische Namen, z. B. res.partner,sale.order,crm.lead. Mit @ im Editor durchsuchbar.">
+                                 help="Kommagetrennte technische Namen, z. B. res.partner,sale.order,crm.lead,social.post. Mit @ im Editor durchsuchbar.">
                             <field name="wm_mention_models"/>
                         </setting>
                     </block>

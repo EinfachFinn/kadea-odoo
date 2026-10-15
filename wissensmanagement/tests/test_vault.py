@@ -142,6 +142,19 @@ class TestVault(TransactionCase):
         self.assertEqual({f["model"] for f in found}, {"res.partner"})
         self.assertEqual(found[0]["name"], "Erika Musterfrau")
 
+    def test_mention_social_post(self):
+        if "social.post" not in self.env:
+            self.skipTest("Social-Media-Basis nicht installiert")
+        post = self.env["social.post"].create({"message": "Sommeraktion startet heute!\n#sommer #aktion"})
+        # "@posts sommer" sucht nur in Posts, über den Post-Text; Name = erste Zeile
+        found = self.vault.search_mentions("posts sommeraktion")
+        self.assertEqual({f["model"] for f in found}, {"social.post"})
+        self.assertIn(post.id, [f["id"] for f in found])
+        self.assertEqual(next(f for f in found if f["id"] == post.id)["name"], "Sommeraktion startet heute!")
+        card = self.vault.mention_cards([["social.post", post.id]])[f"social.post/{post.id}"]
+        self.assertTrue(card["exists"])
+        self.assertEqual(card["icon"], "fa-bullhorn")
+
     def test_upload(self):
         path = self.vault.upload_file("Projekte.md", "bild.png", "iVBORw0KGgo=")
         self.assertEqual(path, "Anhänge/bild.png")

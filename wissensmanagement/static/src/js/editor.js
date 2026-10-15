@@ -26,7 +26,8 @@ const SLASH_COMMANDS = [
     { id: "mermaid", label: "Diagramm (Mermaid)", icon: "fa-sitemap", keys: "diagramm mermaid flowchart" },
     { id: "page", label: "Link zu Seite", icon: "fa-book", keys: "seite link wikilink verlinken" },
     { id: "mention", label: "Odoo-Datensatz erwähnen", icon: "fa-at", keys: "erwähnen mention kontakt @" },
-    { id: "task_mention", label: "Aufgabe erwähnen", icon: "fa-tasks", keys: "aufgabe erwähnen task" },
+    { id: "task_mention", label: "Aufgabe erwähnen", icon: "fa-tasks", keys: "aufgabe erwähnen task", alias: "aufgabe", needsModel: "project.task" },
+    { id: "post_mention", label: "Social-Media-Post erwähnen", icon: "fa-bullhorn", keys: "post posts social media instagram linkedin beitrag erwähnen", alias: "posts", needsModel: "social.post" },
     { id: "task_new", label: "Neue Odoo-Aufgabe anlegen", icon: "fa-plus-square", keys: "aufgabe neu anlegen task", needsProject: true },
     { id: "template", label: "Vorlage einfügen …", icon: "fa-clone", keys: "vorlage template" },
     { id: "image", label: "Bild / Datei", icon: "fa-picture-o", keys: "bild datei image upload" },
@@ -263,14 +264,14 @@ export class MarkdownEditor extends Component {
             language: "de-DE",
             usageStatistics: false,
             autofocus: false,
-            placeholder: "Einfach losschreiben … Tipp: [[ verlinkt eine Seite, @ erwähnt Kontakte, Angebote & Co.",
+            placeholder: "Einfach losschreiben … Tipp: [[ verlinkt eine Seite, @ erwähnt Kontakte, Angebote, Posts & Co.",
             toolbarItems: [
                 // Reihenfolge = Wichtigkeit: Was nicht in die Breite passt, landet im „⋯“-Menü.
                 ["heading", "bold", "italic"],
                 ["ul", "ol", "task"],
                 [
                     button("fa-book", "Andere Wissensseite verlinken", () => this.startTrigger("[[")),
-                    button("fa-at", "Odoo-Datensatz erwähnen (Kontakt, Angebot …)", () => this.startTrigger("@")),
+                    button("fa-at", "Odoo-Datensatz erwähnen (Kontakt, Angebot, Post …)", () => this.startTrigger("@")),
                     button("fa-picture-o", "Bild oder Datei einfügen", () => this.fileInputRef.el.click()),
                     button("fa-info-circle", "Hinweisbox einfügen", () => this.insertCallout()),
                     button("fa-align-center", "Zentrieren (an/aus)", () => this.toggleCenter()),
@@ -875,7 +876,9 @@ export class MarkdownEditor extends Component {
         const slash = /(?:^|[\s\n])\/([\p{L}\p{N} ]{0,24})$/u.exec(text);
         if (slash && !/\s{2}$/.test(slash[1])) {
             const q = slash[1].trim().toLowerCase();
+            const models = new Set((this.props.mentionCategories || []).map((c) => c.model));
             const items = SLASH_COMMANDS.filter((c) => (!c.needsProject || this.props.hasProject))
+                .filter((c) => !c.needsModel || models.has(c.needsModel))
                 .filter((c) => !q || c.label.toLowerCase().includes(q) || c.keys.includes(q))
                 .map((c) => ({ label: c.label, sub: "", value: { ...c } }));
             if (items.length) {
@@ -1046,7 +1049,8 @@ export class MarkdownEditor extends Component {
             case "page": return this.startTrigger("[[");
             case "mention": return this.startTrigger("@");
             case "task_mention":
-                ed.insertText("@aufgabe ");
+            case "post_mention":
+                ed.insertText(`@${SLASH_COMMANDS.find((c) => c.id === id).alias} `);
                 return this.updateSuggest();
             case "task_new": return this.createTask(pos);
             case "template": return this.chooseTemplate(pos);

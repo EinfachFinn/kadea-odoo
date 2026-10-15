@@ -295,6 +295,8 @@ Steht ein Kürzel direkt hinter dem `@`, wird **nur in diesem Bereich** gesucht.
 | @fertigung | Fertigungsaufträge | @fertigung MO/0012 |
 | @reparatur | Reparaturen | @reparatur pumpe |
 | @gerät | Geräte (Wartung) | @gerät drucker |
+| @posts · @post · @beitrag · @social | Social-Media-Posts (gesucht wird im Post-Text) | @posts sommeraktion |
+| @kanal · @konto | Social-Media-Konten | @kanal instagram |
 
 > [!note] Nicht alle Bereiche sind immer aktiv
 > Erwähnbar ist nur, was in unserem Odoo installiert und in den Einstellungen freigeschaltet ist (*Wissensmanagement › Konfiguration › Einstellungen › Erwähnbare Odoo-Modelle*). Man sieht außerdem nur Datensätze, auf die man in Odoo selbst Zugriff hat.
@@ -600,7 +602,7 @@ Archiv/                    ← Erledigtes, nicht löschen, sondern hierhin versc
 | Seite verlinken | `[[` tippen |
 | Dinge nebeneinander | `/2 spalten`, Aufteilung per Klick aufs Spalten-Etikett |
 | Zentrieren | Zentrieren-Knopf oder `/zentriert` |
-| Kontakt, Projekt, Aufgabe … erwähnen | `@` tippen, z. B. @kontakt, @projekt, @aufgabe, @angebot, @lead, @rechnung, @produkt, @mitarbeiter, @ticket, @termin |
+| Kontakt, Projekt, Aufgabe … erwähnen | `@` tippen, z. B. @kontakt, @projekt, @aufgabe, @angebot, @lead, @rechnung, @produkt, @mitarbeiter, @ticket, @termin, @posts |
 | Große Vorschaukarte | Erwähnung allein in eine Zeile schreiben |
 | Aufgabe aus Checkliste | Lesemodus, Maus auf den Punkt, **☑ Aufgabe** |
 | Kommentieren | Text markieren, **Kommentieren** |

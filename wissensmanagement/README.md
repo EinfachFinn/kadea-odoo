@@ -21,7 +21,7 @@ Markdown-Dateien im Wissensordner auf dem Odoo-Server.
 | Zusammenarbeit | **Live-Mitschreiben** wie in Google Docs mit farbigen Cursorn. „Zuletzt bearbeitet von @Person · vor 5 Minuten“ auf jeder Seite (auch „direkt im Wissensordner geändert“, falls jemand die Datei auf dem Server ändert). Avatare zeigen, wer gerade auf der Seite ist, und ein Banner zeigt, wer gerade bearbeitet. Gleichzeitige Änderungen werden automatisch zusammengeführt. Kommentare (auch zu markierten Textstellen) mit Antworten und „Erledigt“. |
 | Versionsverlauf | Jede Bearbeitung erzeugt eine Version. Speichert dieselbe Person mehrfach innerhalb von 10 Minuten, wird das zu einer Version zusammengefasst. Der Ausgangsstand und Änderungen direkt im Ordner werden ebenfalls festgehalten. Ansicht mit farbigem Unterschied (Diff) und **Wiederherstellen**. |
 | Seitenleiste | Favoriten (Stern), „Zuletzt bearbeitet“ mit Avatar, eigene Reihenfolge per Drag & Drop (oberes Viertel = davor, unteres = dahinter, Mitte = als Unterseite). |
-| Slash-Befehle | Im Editor `/` tippen: Überschriften, Listen, Checkliste, Tabelle, Trennlinie, Zitat, Hinweisbox, Code, Mermaid-Diagramm, Seitenlink, @-Erwähnung, **Aufgabe erwähnen / neue Odoo-Aufgabe anlegen**, **Vorlage einfügen**, Bild, Datum. |
+| Slash-Befehle | Im Editor `/` tippen: Überschriften, Listen, Checkliste, Tabelle, Trennlinie, Zitat, Hinweisbox, Code, Mermaid-Diagramm, Seitenlink, @-Erwähnung, **Aufgabe erwähnen / neue Odoo-Aufgabe anlegen**, **Social-Media-Post erwähnen**, **Vorlage einfügen**, Bild, Datum. |
 | Inhalte | `![[Seite]]` bzw. `![[Seite#Abschnitt]]` bettet andere Seiten ein. Mermaid-Diagramme, Syntax-Highlighting, Drucken/PDF. |
 | Odoo-Aktionen | Ein Klick auf „Aufgabe“ an einer Checkbox legt eine Odoo-Aufgabe an und verlinkt sie live. „In Chatter teilen“ postet Link und Auszug an einen beliebigen Datensatz. |
 | Rückrichtung | In **jeder** Odoo-Formularansicht erscheint ein Button „📖 Wissen (n)“, wenn der Datensatz auf Wissensseiten erwähnt wird. |
@@ -40,7 +40,8 @@ durchsuchbar sind, legst du in den Einstellungen fest; nicht installierte Modell
 immer die Zugriffsrechte des Betrachters.
 
 Kurzbefehle zum Filtern: `@kontakt`, `@benutzer`, `@projekt`, `@aufgabe`, `@angebot`, `@lead`, `@einkauf`,
-`@rechnung`, `@produkt`, `@mitarbeiter`, `@ticket`, `@termin`, `@lieferung`, `@fertigung`, `@reparatur`, `@gerät`.
+`@rechnung`, `@produkt`, `@mitarbeiter`, `@ticket`, `@termin`, `@lieferung`, `@fertigung`, `@reparatur`, `@gerät`,
+`@posts` (Social-Media-Posts, gesucht wird im Post-Text) und `@kanal` (Social-Media-Konten).
 
 ### Was passiert, wenn zwei Personen gleichzeitig arbeiten?
 
