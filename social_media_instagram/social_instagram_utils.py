@@ -1,7 +1,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 # Instagram API with Instagram Login: no Facebook page is needed, only an
 # Instagram professional (business or creator) account.
@@ -22,7 +22,6 @@ _PARAM_GRAPH_VERSION_INSTAGRAM = "social_media_instagram.graph_version"
 _SCOPE_INSTAGRAM = [
     "instagram_business_basic",
     "instagram_business_manage_insights",
-    "instagram_business_manage_comments",
 ]
 
 _MEDIA_FIELDS_INSTAGRAM = (
@@ -42,28 +41,28 @@ _MEDIA_METRICS_INSTAGRAM = {
 }
 _MEDIA_METRICS_FALLBACK_INSTAGRAM = "reach,likes,comments,saved"
 
-# Account insights asked as totals over a range of days.
+# Account insights asked as the totals of one day, which is what the daily
+# series of ``social.account.statistics`` is made of.
 _ACCOUNT_METRICS_INSTAGRAM = (
     "views,reach,likes,comments,shares,saves,total_interactions,profile_links_taps"
 )
 _ACCOUNT_METRICS_FALLBACK_INSTAGRAM = "views,reach,likes,comments,shares,saves"
-# Instagram refuses an insights range wider than 30 days, and serves no data
-# older than about two years.
-_INSIGHTS_MAX_RANGE_DAYS_INSTAGRAM = 30
+# Instagram serves no account insights older than about two years.
 _INSIGHTS_MAX_AGE_DAYS_INSTAGRAM = 729
-# Parallel requests used to build a chart, one request per bucket.
-_CHART_WORKERS_INSTAGRAM = 6
+# Parallel requests used to read the daily series, one request per day.
+_STATISTICS_WORKERS_INSTAGRAM = 6
+# Days of the series asked again on every refresh: Instagram revises the
+# figures of the last days for up to 48 hours.
+_STATISTICS_REFRESH_DAYS_INSTAGRAM = 7
+# Days of the series read when an account is linked. One call per day, so the
+# depth is what bounds the cost of the backfill.
+_STATISTICS_HISTORY_DAYS_INSTAGRAM = 90
 
-# How many of the latest publications the synchronization reads, and for how
-# many days back the insights of a publication are asked again. Older
-# publications keep the likes and comments counters of the media list, which
-# cost nothing more.
-_MEDIA_SYNC_LIMIT_INSTAGRAM = 100
+# Publications read by the check for updates: what the user published by hand
+# is matched to its plan, the rest is imported. One call, whatever the
+# history of the account.
+_MEDIA_CHECK_LIMIT_INSTAGRAM = 25
 _MEDIA_PAGE_SIZE_INSTAGRAM = 50
-_INSIGHTS_WINDOW_DAYS_INSTAGRAM = 90
-# Publications read by the 30 minutes check to detect what the user published
-# by hand in the Instagram app.
-_MEDIA_CHECK_LIMIT_INSTAGRAM = 15
 
 # Long-lived tokens last 60 days and can be refreshed once they are 24 hours
 # old. They are refreshed when less than this margin is left.
@@ -144,62 +143,6 @@ def parse_instagram_datetime(value):
     return parsed
 
 
-def to_datetime(value):
-    """Accept what the chart client sends: a datetime, a date or a string."""
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, date):
-        return datetime.combine(value, datetime.min.time())
-    if isinstance(value, str):
-        return datetime.fromisoformat(value.strip()[:19].replace("T", " "))
-    return value
-
-
-def chart_buckets(start_date, end_date, freq="W-MON"):
-    """Return the ``(first_day, last_day)`` of every bucket of a chart.
-
-    It mirrors ``social_media_base.social_utils.get_weeks``, which builds the
-    labels of the chart: one bucket per label, in the same order, so the data
-    lines up with the axis.
-    """
-    start = to_datetime(start_date)
-    end = to_datetime(end_date)
-    buckets = []
-    if not start or not end:
-        return buckets
-    if freq == "D":
-        current = start
-        while current <= end:
-            buckets.append((current.date(), current.date()))
-            current += timedelta(days=1)
-    elif freq == "ME":
-        current = start.replace(day=1)
-        while current <= end:
-            next_month = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
-            last_day = next_month - timedelta(days=1)
-            if last_day <= end:
-                buckets.append((current.date(), last_day.date()))
-            current = next_month
-    else:
-        days_ahead = (0 - start.weekday()) % 7
-        current = start + timedelta(days=days_ahead)
-        while current <= end:
-            buckets.append((current.date(), (current + timedelta(days=6)).date()))
-            current += timedelta(weeks=1)
-    return buckets
-
-
-def split_range(first_day, last_day, max_days=_INSIGHTS_MAX_RANGE_DAYS_INSTAGRAM):
-    """Split a range of days into ranges Instagram answers in one call."""
-    chunks = []
-    current = first_day
-    while current <= last_day:
-        chunk_end = min(current + timedelta(days=max_days - 1), last_day)
-        chunks.append((current, chunk_end))
-        current = chunk_end + timedelta(days=1)
-    return chunks
-
-
 def day_timestamp(day):
     """Unix timestamp of the start of a day in UTC."""
     return int(
@@ -210,5 +153,9 @@ def day_timestamp(day):
 
 
 def engagement_rate(interactions, reach):
-    """Interactions over the accounts reached, in percent."""
-    return round(interactions / reach * 100, 2) if reach else 0.0
+    """Interactions over the accounts reached, as a ratio.
+
+    A ratio like the ``engagement`` of the base, which LinkedIn fills the
+    same way, so the figures of both social media read alike.
+    """
+    return round(interactions / reach, 4) if reach else 0.0

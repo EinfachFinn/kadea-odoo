@@ -67,7 +67,7 @@
                                 readonly="1"
                             />
                             <field name="instagram_media_product_type" />
-                            <field name="instagram_statistics_date" />
+                            <field name="statistics_date" />
                         </group>
                     </group>
                     <notebook>
@@ -113,7 +113,7 @@
                                 <group>
                                     <field name="impression_count" string="Views" />
                                     <field name="instagram_reach" />
-                                    <field name="engagement" string="Engagement (%)" />
+                                    <field name="engagement" widget="percentage" />
                                 </group>
                                 <group>
                                     <field name="like_count" string="Likes" />
@@ -168,7 +168,7 @@
                 <field name="comment_count" string="Comments" sum="Total" />
                 <field name="share_count" string="Shares" sum="Total" />
                 <field name="instagram_saved" sum="Total" />
-                <field name="engagement" string="Engagement (%)" avg="Average" />
+                <field name="engagement" widget="percentage" avg="Average" />
             </list>
         </field>
     </record>
@@ -200,30 +200,6 @@
         </field>
     </record>
 
-    <record model="ir.ui.view" id="social_post_account_view_kanban_inherit">
-        <field name="name">social.post.account.view.kanban.inherit.instagram</field>
-        <field name="model">social.post.account</field>
-        <field
-            name="inherit_id"
-            ref="social_media_base.social_post_account_view_kanban"
-        />
-        <field name="arch" type="xml">
-            <xpath
-                expr="//div[@t-if=&quot;record.state.raw_value == 'deleted'&quot;]"
-                position="after"
-            >
-                <div t-if="record.state.raw_value == 'manual'" class="pt-1">
-                    <span
-                        class="badge text-bg-warning"
-                        title="Planned: publish it by hand in the Instagram app"
-                    >
-                        <i class="fa fa-hand-pointer-o" aria-hidden="true" />
-                        To publish manually
-                    </span>
-                </div>
-            </xpath>
-        </field>
-    </record>
 
     <record model="ir.actions.act_window" id="social_post_account_instagram_pending_action">
         <field name="name">Instagram: to publish</field>

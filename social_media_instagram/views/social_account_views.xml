@@ -6,53 +6,50 @@
         <field name="model">social.account</field>
         <field name="inherit_id" ref="social_media_base.social_account_view_form" />
         <field name="arch" type="xml">
-            <xpath expr="//button[@name='update_account']" position="after">
+            <xpath expr="//header/button[@name='action_update_account']" position="after">
                 <button
-                    string="Refresh statistics"
-                    class="oe_stat_button"
+                    string="Import publications"
                     type="object"
-                    name="action_instagram_refresh"
-                    invisible="media_type != 'instagram' or instagram_token_expired"
-                    title="Read the latest publications and their statistics from Instagram now."
+                    name="action_instagram_import"
+                    invisible="media_type != 'instagram' or not can_manage_account or need_update"
+                    title="Read the latest publications of the account now: what was published by hand is linked to its plan, the rest is imported, with its figures."
                 />
                 <button
                     string="Check connection"
-                    class="oe_stat_button"
                     type="object"
                     name="action_instagram_check_connection"
                     invisible="media_type != 'instagram'"
                     title="Ask Instagram for the profile of the account, refreshing the token when it is about to expire."
                 />
             </xpath>
-            <xpath expr="//field[@name='image_1920']" position="before">
+            <xpath expr="//sheet/widget[@name='web_ribbon']" position="after">
+                <field name="need_update" invisible="1" />
                 <div
                     class="alert alert-danger"
                     role="alert"
-                    invisible="media_type != 'instagram' or not instagram_token_expired"
+                    invisible="media_type != 'instagram' or not need_update"
                 >
                     The Instagram authorization of this account expired. Use
                     <b>Update account</b> to authorize it again.
                 </div>
-                <div
-                    class="oe_button_box"
-                    name="instagram_button_box"
-                    invisible="media_type != 'instagram'"
-                >
-                    <button
-                        class="oe_stat_button"
-                        type="object"
-                        name="action_instagram_open_pending"
-                        icon="fa-hand-pointer-o"
-                    >
-                        <field
-                            name="instagram_pending_count"
-                            widget="statinfo"
-                            string="To publish"
-                        />
-                    </button>
-                </div>
             </xpath>
-            <xpath expr="//field[@name='account_url']" position="after">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button
+                    class="oe_stat_button"
+                    type="object"
+                    name="action_instagram_open_pending"
+                    icon="fa-hand-pointer-o"
+                    invisible="media_type != 'instagram'"
+                    title="Publications of this account waiting to be published by hand in the Instagram app."
+                >
+                    <field
+                        name="instagram_pending_count"
+                        widget="statinfo"
+                        string="To publish"
+                    />
+                </button>
+            </xpath>
+            <xpath expr="//field[@name='media_id']" position="after">
                 <field
                     name="instagram_account_type"
                     invisible="media_type != 'instagram'"
@@ -80,7 +77,6 @@
                     <group string="Token">
                         <field name="instagram_token_date" />
                         <field name="expire_access_token_date" readonly="1" />
-                        <field name="instagram_token_expired" />
                     </group>
                 </group>
             </xpath>

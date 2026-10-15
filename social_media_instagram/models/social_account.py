@@ -1,7 +1,6 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import base64
-import itertools
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -13,58 +12,73 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools.image import image_process
 
+from odoo.addons.social_media_base.exceptions import SocialCredentialsError
+
 from ..social_instagram_utils import (
     _ACCOUNT_METRICS_FALLBACK_INSTAGRAM,
     _ACCOUNT_METRICS_INSTAGRAM,
-    _CHART_WORKERS_INSTAGRAM,
     _GRAPH_VERSION_INSTAGRAM,
     _INSIGHTS_MAX_AGE_DAYS_INSTAGRAM,
-    _INSIGHTS_WINDOW_DAYS_INSTAGRAM,
     _MEDIA_CHECK_LIMIT_INSTAGRAM,
     _MEDIA_FIELDS_INSTAGRAM,
     _MEDIA_METRICS_FALLBACK_INSTAGRAM,
     _MEDIA_METRICS_INSTAGRAM,
     _MEDIA_PAGE_SIZE_INSTAGRAM,
-    _MEDIA_SYNC_LIMIT_INSTAGRAM,
     _PARAM_GRAPH_VERSION_INSTAGRAM,
     _PROFILE_FIELDS_INSTAGRAM,
+    _STATISTICS_HISTORY_DAYS_INSTAGRAM,
+    _STATISTICS_REFRESH_DAYS_INSTAGRAM,
+    _STATISTICS_WORKERS_INSTAGRAM,
     _TOKEN_MARGIN_DAYS_INSTAGRAM,
     _URL_API_INSTAGRAM,
     _URL_GRAPH_INSTAGRAM,
     _URL_WEB_INSTAGRAM,
     captions_match,
-    chart_buckets,
     day_timestamp,
     engagement_rate,
     parse_instagram_datetime,
-    split_range,
 )
 
 _logger = logging.getLogger(__name__)
 
+# Error codes and subcodes Instagram answers for a token it no longer accepts.
+# ``OAuthException`` alone means nothing: Instagram also answers it, with code
+# 100, for a metric a publication does not report.
+_TOKEN_ERROR_CODES = (102, 190)
+_TOKEN_ERROR_SUBCODES = (458, 459, 460, 463, 464, 467)
+
 
 class InstagramApiError(UserError):
-    """What Instagram answered when it refused a call.
+    """What Instagram answered when it refused a call."""
 
-    ``is_token_error`` tells apart the refusals a new authorization fixes
-    (an expired or revoked token) from everything else.
-    """
-
-    def __init__(self, message, code=None, subcode=None, error_type=None):
+    def __init__(self, message, code=None, subcode=None):
         super().__init__(message)
         self.code = code
         self.subcode = subcode
-        self.error_type = error_type
 
-    @property
-    def is_token_error(self):
-        # ``OAuthException`` alone means nothing: Instagram also answers it,
-        # with code 100, for a metric a publication does not report.
-        return self.code in (102, 190) or self.subcode in (458, 459, 460, 463, 464, 467)
+
+class InstagramCredentialsError(SocialCredentialsError):
+    """Instagram refused the token: only a new authorization fixes it.
+
+    Raised as the ``SocialCredentialsError`` of the base, which is what makes
+    the check for updates flag the account instead of retrying it.
+    """
+
+    def __init__(self, message, code=None, subcode=None):
+        super().__init__(message)
+        self.code = code
+        self.subcode = subcode
 
 
 class SocialAccount(models.Model):
-    """Instagram implementation of the social account API calls."""
+    """Instagram implementation of the social account API calls.
+
+    Instagram is read, never written: nothing here publishes. What it costs
+    is bounded the way the base asks for. The check for updates reads the
+    latest publications in one call, the daily series costs one call per day
+    of the window asked for, and the figures of a publication one call per
+    publication inside the window of the base.
+    """
 
     _inherit = "social.account"
 
@@ -78,15 +92,11 @@ class SocialAccount(models.Model):
         help="When the long-lived token was obtained or refreshed. Instagram "
         "only refreshes a token that is at least 24 hours old.",
     )
-    instagram_token_expired = fields.Boolean(
-        string="Authorization Expired",
-        readonly=True,
-        help="Instagram refused the token of this account, or it expired "
-        "without being refreshed. Update the account to authorize it again.",
-    )
     instagram_granted_scopes = fields.Char(string="Granted Permissions", readonly=True)
     instagram_account_type = fields.Char(string="Account Type", readonly=True)
-    instagram_followers_count = fields.Integer(string="Instagram Followers", readonly=True)
+    instagram_followers_count = fields.Integer(
+        string="Instagram Followers", readonly=True
+    )
     instagram_follows_count = fields.Integer(string="Following", readonly=True)
     instagram_media_count = fields.Integer(string="Publications", readonly=True)
     instagram_pending_count = fields.Integer(
@@ -106,10 +116,10 @@ class SocialAccount(models.Model):
             account.instagram_pending_count = counts.get(account, 0)
 
     def _fields_account_url(self):
-        res = super()._fields_account_url()
-        if self.media_type == "instagram" and self.username:
-            res.append(("instagram", f"{_URL_WEB_INSTAGRAM}/{self.username}/"))
-        return res
+        return {
+            **super()._fields_account_url(),
+            "instagram": f"{_URL_WEB_INSTAGRAM}/{self.username}/" if self.username else "",
+        }
 
     def _get_removal_values(self):
         values = super()._get_removal_values()
@@ -140,7 +150,7 @@ class SocialAccount(models.Model):
 
         The single place that talks to the network, which is also what the
         tests replace. It never touches the database, so it can run in the
-        threads that build a chart.
+        threads that read the daily series.
 
         :rtype: tuple
         """
@@ -149,9 +159,7 @@ class SocialAccount(models.Model):
                 method, url, params=params, data=data, timeout=timeout
             )
         except requests.exceptions.RequestException as ex:
-            raise InstagramApiError(
-                self.env._("Error connecting to Instagram: %(error)s", error=ex)
-            ) from ex
+            raise InstagramApiError(f"Error connecting to Instagram: {ex}") from ex
         try:
             payload = response.json()
         except ValueError:
@@ -160,23 +168,27 @@ class SocialAccount(models.Model):
 
     @api.model
     def _instagram_raise_for_payload(self, status, payload):
+        """Raise what Instagram answered, telling the token errors apart.
+
+        Kept free of database access, translations included, because it runs
+        in the threads of :meth:`_instagram_day_statistics` too.
+        """
         error = payload.get("error") if isinstance(payload, dict) else None
         if status < 400 and not error:
             return
         if isinstance(error, dict):
-            raise InstagramApiError(
-                error.get("error_user_msg") or error.get("message") or str(error),
-                code=error.get("code"),
-                subcode=error.get("error_subcode"),
-                error_type=error.get("type"),
+            message = error.get("error_user_msg") or error.get("message") or str(error)
+            code, subcode = error.get("code"), error.get("error_subcode")
+        else:
+            message = (
+                payload.get("error_message")
+                or (error if isinstance(error, str) else "")
+                or f"Instagram answered with the HTTP status {status}."
             )
-        raise InstagramApiError(
-            payload.get("error_message")
-            or (error if isinstance(error, str) else "")
-            or self.env._("Instagram answered with the HTTP status %(status)s.", status=status),
-            code=payload.get("code"),
-            error_type=payload.get("error_type"),
-        )
+            code, subcode = payload.get("code"), None
+        if code in _TOKEN_ERROR_CODES or subcode in _TOKEN_ERROR_SUBCODES:
+            raise InstagramCredentialsError(message, code=code, subcode=subcode)
+        raise InstagramApiError(message, code=code, subcode=subcode)
 
     def _request_instagram(
         self,
@@ -192,7 +204,8 @@ class SocialAccount(models.Model):
 
         :param token: the token to send, the one of the account when ``None``
             and none at all when ``False``.
-        :raise InstagramApiError: when Instagram refused the call.
+        :raise InstagramCredentialsError: when Instagram refused the token.
+        :raise InstagramApiError: when Instagram refused anything else.
         """
         params = dict(params or {})
         if token is None:
@@ -296,7 +309,6 @@ class SocialAccount(models.Model):
             "access_token": token.get("access_token"),
             "expire_access_token_date": (now + timedelta(seconds=expires_in)).date(),
             "instagram_token_date": now,
-            "instagram_token_expired": False,
         }
 
     def _instagram_get_profile(self, token=None):
@@ -324,9 +336,11 @@ class SocialAccount(models.Model):
     def _create_account_instagram(self, wizard, token, granted_scopes=""):
         """Create or update the account the user just authorized.
 
-        An account already linked to the same Instagram user is reused, and
-        reactivated if it was archived; whether the current user may take it
-        over is decided by ``_check_can_associate``.
+        A new account goes through ``_associate_account`` of the base, which
+        finds, checks, reactivates or creates it. An account being updated is
+        the one of the wizard, and the user has to have logged in on
+        Instagram as that very account: otherwise the credentials of one
+        account would end up on another.
 
         :param wizard: the association wizard that started the flow.
         :param token: the long-lived token answer.
@@ -336,21 +350,9 @@ class SocialAccount(models.Model):
         profile = self._instagram_get_profile(token=access_token)
         remote_ref = str(profile.get("user_id") or profile.get("id") or "")
         if not remote_ref:
-            raise UserError(self.env._("Instagram did not answer the account identifier."))
-        target = wizard.account_id.sudo()
-        if target and target.remote_ref and target.remote_ref != remote_ref:
             raise UserError(
-                self.env._(
-                    "You logged in on Instagram as @%(username)s, but this "
-                    "account is @%(account)s. Log out of Instagram in the "
-                    "browser and update the account again.",
-                    username=profile.get("username"),
-                    account=target.username,
-                )
+                self.env._("Instagram did not answer the account identifier.")
             )
-        account = target or self._find_account_to_associate(
-            "instagram", remote_ref, username=profile.get("username")
-        )
         values = {
             **self._instagram_profile_values(profile),
             **self._instagram_token_values(token),
@@ -360,21 +362,52 @@ class SocialAccount(models.Model):
             "instagram_granted_scopes": granted_scopes,
             "last_update_account": fields.Datetime.now(),
         }
-        if account:
-            account._check_can_associate()
-            if not account.active:
+        target = wizard.account_id.sudo()
+        if target:
+            if target.remote_ref and target.remote_ref != remote_ref:
+                raise UserError(
+                    self.env._(
+                        "You logged in on Instagram as @%(username)s, but this "
+                        "account is @%(account)s. Log out of Instagram in the "
+                        "browser and update the account again.",
+                        username=profile.get("username"),
+                        account=target.username,
+                    )
+                )
+            target._check_can_associate()
+            if not target.active:
                 values["active"] = True
-            account.sudo().write(values)
+            target.write(values)
+            account = target
         else:
-            values.update(
-                {
-                    "media_id": wizard.media_id.id,
-                    "user_id": self.env.user.id,
-                }
+            account = self._associate_account(
+                "instagram",
+                remote_ref,
+                values,
+                username=profile.get("username"),
+                create_values={"media_id": wizard.media_id.id},
             )
-            account = self.sudo().create(values)
-        account._trigger_initial_sync()
+        account._clear_credentials_flag()
+        account._on_account_associated()
         return account
+
+    def _on_account_associated(self):
+        """Import the latest publications before the base adds them up.
+
+        The base refreshes and backfills the daily series and derives the
+        card of the account. The publications are read first, so the
+        fallback of the card (the counters of the publications) already has
+        something to add up, and a post planned before the account was linked
+        again finds the publication made by hand in the meantime.
+        """
+        for account in self.filtered(lambda acc: acc.media_type == "instagram"):
+            with account._account_guard(on_error=account._instagram_notify_failure):
+                account._instagram_import_media()
+        return super()._on_account_associated()
+
+    # ------------------------------------------------------------------
+    # Token
+    # ------------------------------------------------------------------
 
     def _instagram_refresh_token(self):
         """Renew the long-lived token for 60 more days."""
@@ -387,114 +420,117 @@ class SocialAccount(models.Model):
         self.sudo().write(self._instagram_token_values(payload))
         return payload
 
-    def _instagram_flag_token_expired(self, reason):
-        """Tell the responsible user the account has to be authorized again."""
-        self.ensure_one()
-        if self.instagram_token_expired:
-            return
-        self.sudo().write({"instagram_token_expired": True})
-        self.message_post(
-            body=self.env._(
-                "The Instagram authorization of this account is no longer "
-                "valid: %(reason)s. Use 'Update account' to authorize it "
-                "again; until then no statistics are read.",
-                reason=reason,
-            ),
-            partner_ids=self.user_id.partner_id.ids,
-        )
+    def _instagram_token_due(self):
+        """Whether the token should be renewed now, from the stored dates.
 
-    def _instagram_ensure_token(self):
-        """Refresh the token when it is about to expire.
-
-        Cheap when the token is still good: the stored dates answer, no call
-        is made. Instagram only refreshes a token at least one day old and not
-        yet expired, so an expired one asks the user to authorize again.
-
-        :return: whether the account can be used.
-        :rtype: bool
+        Instagram only refreshes a token that is at least one day old.
         """
         self.ensure_one()
-        if not self.sudo().access_token:
-            self._instagram_flag_token_expired(self.env._("there is no access token"))
-            return False
-        today = fields.Date.today()
         expire = self.expire_access_token_date
-        if expire and expire < today:
-            self._instagram_flag_token_expired(self.env._("the token expired"))
+        if not expire:
             return False
         issued = self.instagram_token_date
         old_enough = not issued or issued <= fields.Datetime.now() - timedelta(days=1)
-        if (
-            expire
-            and expire <= today + timedelta(days=_TOKEN_MARGIN_DAYS_INSTAGRAM)
-            and old_enough
-        ):
+        margin = fields.Date.today() + timedelta(days=_TOKEN_MARGIN_DAYS_INSTAGRAM)
+        return old_enough and expire <= margin
+
+    def _instagram_validate_access_token(self):
+        """Renew the token when it is due, and check it when asked to.
+
+        Cheap when the token is still good: the stored dates answer and no
+        call is made, as the base expects from a check that runs before
+        every operation. ``check_remote_token`` is the deliberate check of
+        the account form, which asks Instagram for the profile.
+
+        :raise SocialCredentialsError: when only a new authorization helps.
+        """
+        self.ensure_one()
+        if not self.sudo().access_token:
+            raise InstagramCredentialsError(
+                self.env._("The account has no Instagram access token.")
+            )
+        expire = self.expire_access_token_date
+        if expire and expire < fields.Date.today():
+            raise InstagramCredentialsError(
+                self.env._("The Instagram access token expired.")
+            )
+        if self._instagram_token_due():
             try:
                 self._instagram_refresh_token()
             except InstagramApiError as error:
+                # The token is still valid for a few days: a refusal that is
+                # not about the token is retried on the next run.
                 _logger.warning(
                     "Could not refresh the Instagram token of account %s: %s",
                     self.id,
                     error,
                 )
-                if error.is_token_error or expire <= today:
-                    self._instagram_flag_token_expired(str(error))
-                    return False
-        return True
+        if self.env.context.get("check_remote_token"):
+            self.sudo().write(
+                {
+                    **self._instagram_profile_values(self._instagram_get_profile()),
+                    "last_update_account": fields.Datetime.now(),
+                }
+            )
+            if not self.env.context.get("not_notify"):
+                self._notify_user_client(
+                    notif_type="social_form_success",
+                    notif_message=self.env._(
+                        "The token is valid, connected as @%(username)s.",
+                        username=self.username,
+                    ),
+                    media="instagram",
+                    account_name=self.name,
+                )
 
     def validate_access_token(self):
         res = super().validate_access_token()
         for account in self.filtered(lambda acc: acc.media_type == "instagram"):
-            valid = account._instagram_ensure_token()
-            if valid and not self.env.context.get("not_notify"):
-                account._notify_user_client(
-                    notif_type="social_form_success",
-                    notif_message=self.env._("The token is valid."),
-                    media="instagram",
-                    account_name=account.name,
-                )
+            account._instagram_validate_access_token()
         return res
 
+    def _refresh_credentials(self):
+        """Renew the token without the user, which Instagram allows."""
+        res = super()._refresh_credentials()
+        if self.media_type != "instagram":
+            return res
+        expire = self.expire_access_token_date
+        if not self.sudo().access_token or (expire and expire < fields.Date.today()):
+            return False
+        try:
+            self._instagram_refresh_token()
+        except UserError:
+            _logger.exception(
+                "Could not renew the Instagram token of the account %s", self.id
+            )
+            return False
+        return True
+
     def action_instagram_check_connection(self):
-        """Ask Instagram for the profile, from the account form."""
+        """Ask Instagram for the profile, from the account form.
+
+        A token Instagram refuses flags the account right away, the way the
+        check for updates would on its next run.
+        """
         self.ensure_one()
-        if not self._instagram_ensure_token():
+        try:
+            self.with_context(check_remote_token=True).validate_access_token()
+        except SocialCredentialsError as error:
+            self._flag_credentials_expired(str(error))
             raise UserError(
                 self.env._(
-                    "The Instagram authorization of this account expired. Use "
-                    "'Update account' to authorize it again."
+                    "Instagram refused the authorization of this account: "
+                    "%(error)s. Use 'Update account' to authorize it again.",
+                    error=error,
                 )
-            )
-        try:
-            profile = self._instagram_get_profile()
-        except InstagramApiError as error:
-            if error.is_token_error:
-                self._instagram_flag_token_expired(str(error))
-            raise
-        self.sudo().write(
-            {
-                **self._instagram_profile_values(profile),
-                "last_update_account": fields.Datetime.now(),
-            }
-        )
-        return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {
-                "type": "success",
-                "message": self.env._(
-                    "Connected to Instagram as @%(username)s.",
-                    username=self.username,
-                ),
-                "next": {"type": "ir.actions.client", "tag": "soft_reload"},
-            },
-        }
+            ) from error
+        return True
 
     # ------------------------------------------------------------------
-    # Publications and their statistics
+    # Publications
     # ------------------------------------------------------------------
 
-    def _instagram_fetch_media(self, limit=_MEDIA_SYNC_LIMIT_INSTAGRAM):
+    def _instagram_fetch_media(self, limit=_MEDIA_CHECK_LIMIT_INSTAGRAM):
         """Return the latest publications of the account, newest first."""
         self.ensure_one()
         payload = self._request_instagram(
@@ -520,55 +556,15 @@ class SocialAccount(models.Model):
             return values[0].get("value") or 0
         return (item.get("total_value") or {}).get("value") or 0
 
-    def _instagram_media_insights(self, media):
-        """Return the insights of one publication by metric name.
-
-        A publication answers a different set of metrics depending on its
-        kind, and Instagram refuses the whole call for a metric it does not
-        answer, so a smaller set is asked for before giving up. An empty
-        answer keeps the counters the media list already gave.
-
-        :rtype: dict
-        """
-        self.ensure_one()
-        product = media.get("media_product_type") or ""
-        metrics = _MEDIA_METRICS_INSTAGRAM.get(
-            product, _MEDIA_METRICS_INSTAGRAM["DEFAULT"]
-        )
-        for metric_set in (metrics, _MEDIA_METRICS_FALLBACK_INSTAGRAM):
-            try:
-                payload = self._request_instagram(
-                    f"/{media['id']}/insights", params={"metric": metric_set}
-                )
-            except InstagramApiError as error:
-                if error.is_token_error:
-                    raise
-                _logger.info(
-                    "Instagram refused the insights %s of media %s: %s",
-                    metric_set,
-                    media.get("id"),
-                    error,
-                )
-                continue
-            return {
-                item.get("name"): self._instagram_metric_value(item)
-                for item in payload.get("data", [])
-            }
-        return {}
-
     @api.model
-    def _instagram_media_values(self, media, insights=None):
-        """Return the ``social.post.account`` values of one publication.
+    def _instagram_media_values(self, media):
+        """Return what the media list says about one publication.
 
-        The counters that need insights are only written when insights were
-        read, so a publication out of the insights window keeps the figures
-        it was last given instead of dropping to zero.
+        Only what the list answers for free: the figures that need insights
+        are written by :meth:`_refresh_post_statistics`.
         """
-        insights = insights or {}
         media_type = media.get("media_type") or False
         product = media.get("media_product_type") or False
-        likes = insights.get("likes", media.get("like_count") or 0)
-        comments = insights.get("comments", media.get("comments_count") or 0)
         values = {
             "remote_ref": media["id"],
             "post_account_url": media.get("permalink") or False,
@@ -576,31 +572,14 @@ class SocialAccount(models.Model):
             "instagram_media_product_type": product,
             "instagram_shortcode": media.get("shortcode") or False,
             "has_video": media_type == "VIDEO" or product == "REELS",
-            "like_count": likes,
-            "comment_count": comments,
+            "like_count": media.get("like_count") or 0,
+            "comment_count": media.get("comments_count") or 0,
             "state": "posted",
-            "published": True,
+            "failed_description": False,
         }
         published = parse_instagram_datetime(media.get("timestamp"))
         if published:
             values["published_date"] = published
-        if insights:
-            shares = insights.get("shares", 0)
-            saved = insights.get("saved", 0)
-            reach = insights.get("reach", 0)
-            interactions = insights.get("total_interactions") or (
-                likes + comments + shares + saved
-            )
-            values.update(
-                {
-                    "share_count": shares,
-                    "impression_count": insights.get("views", 0),
-                    "instagram_reach": reach,
-                    "instagram_saved": saved,
-                    "engagement": engagement_rate(interactions, reach),
-                    "instagram_statistics_date": fields.Datetime.now(),
-                }
-            )
         return values
 
     def _instagram_media_images(self, media):
@@ -610,10 +589,6 @@ class SocialAccount(models.Model):
             if media.get("media_type") == "VIDEO"
             else media.get("media_url")
         )
-        name = f"instagram_{media['id']}.jpg"
-        PostAccount = self.env["social.post.account"]
-        if not url or PostAccount._get_medias_account([name]):
-            return []
         datas = self._instagram_download(url)
         if not datas or not self._instagram_valid_image(datas):
             return []
@@ -622,10 +597,9 @@ class SocialAccount(models.Model):
                 0,
                 0,
                 {
-                    "name": name,
+                    "name": f"instagram_{media['id']}.jpg",
                     "type": "binary",
                     "mimetype": "image/jpeg",
-                    "res_model": PostAccount._name,
                     "datas": datas,
                 },
             )
@@ -641,7 +615,9 @@ class SocialAccount(models.Model):
         published = parse_instagram_datetime(media.get("timestamp"))
         for line in pending:
             planned_on = (
-                line.post_id.send_post_date or line.post_id.create_date or line.create_date
+                line.post_id.send_post_date
+                or line.post_id.create_date
+                or line.create_date
             )
             if published and planned_on and published < planned_on - timedelta(days=2):
                 continue
@@ -649,21 +625,29 @@ class SocialAccount(models.Model):
                 return line
         return pending.browse()
 
-    def _instagram_store_media(self, medias, create_unknown=True):
-        """Write what Instagram answered about these publications.
+    def _instagram_import_media(self, limit=_MEDIA_CHECK_LIMIT_INSTAGRAM):
+        """Read the latest publications and bring them into Odoo.
 
         A publication already known is updated. An unknown one is first
         matched against the publications waiting to be published by hand,
         which is how a post published in the Instagram app joins its plan;
-        whatever is left is imported as a publication of its own, like the
-        LinkedIn connector imports what was published outside of Odoo.
+        whatever is left is imported as a publication of its own. The figures
+        of what was touched inside the window of the base are read right
+        after, and the publications missing from the listing are only marked
+        as deleted once Instagram confirms it, as the base asks.
 
-        :return: the medias that matched nothing and were not imported.
-        :rtype: list
+        :return: the publications written.
+        :rtype: recordset of ``social.post.account``
         """
         self.ensure_one()
-        PostAccount = self.env["social.post.account"].with_context(active_test=False)
-        refs = [media["id"] for media in medias if media.get("id")]
+        self.sudo().write(
+            self._instagram_profile_values(
+                self._instagram_get_profile(), with_picture=False
+            )
+        )
+        medias = [media for media in self._instagram_fetch_media(limit) if media.get("id")]
+        PostAccount = self.env["social.post.account"].sudo().with_context(active_test=False)
+        refs = [media["id"] for media in medias]
         known = {
             line.remote_ref: line
             for line in PostAccount.search(
@@ -673,205 +657,159 @@ class SocialAccount(models.Model):
         pending = PostAccount.search(
             [("account_id", "=", self.id), ("state", "=", "manual")], order="id"
         )
-        insights_limit = fields.Datetime.now() - timedelta(
-            days=_INSIGHTS_WINDOW_DAYS_INSTAGRAM
-        )
-        posts = self.env["social.post"]
-        unknown = []
+        lines = PostAccount
+        matched = PostAccount
         for media in medias:
-            if not media.get("id"):
-                continue
+            values = self._instagram_media_values(media)
             line = known.get(media["id"])
-            matched = False
             if not line and pending:
                 line = self._instagram_match_pending(pending, media)
                 pending -= line
-                matched = bool(line)
-            if not line and not create_unknown:
-                unknown.append(media)
-                continue
-            published = parse_instagram_datetime(media.get("timestamp"))
-            insights = (
-                self._instagram_media_insights(media)
-                if published and published >= insights_limit
-                else {}
-            )
-            values = self._instagram_media_values(media, insights)
+                matched |= line
             if line:
                 line.write(values)
-                posts |= line.post_id
-                if matched:
-                    line._instagram_log_published()
             else:
-                values.update(
+                line = PostAccount.create(
                     {
+                        **values,
                         "account_id": self.id,
                         "message": media.get("caption") or "-",
                         "image_ids": self._instagram_media_images(media),
                     }
                 )
-                PostAccount.create(values)
-        posts._instagram_update_state()
-        return unknown
+            lines |= line
+        self._refresh_post_statistics(
+            lines.filtered_domain(self._statistics_window_domain())
+        )
+        matched._instagram_log_published()
+        matched.post_id._instagram_after_manual_publication()
+        self._instagram_check_missing(medias, complete=len(medias) < limit)
+        return lines
 
-    def _instagram_mark_deleted(self, medias, complete):
-        """Mark the publications that are gone from Instagram.
+    def _instagram_check_missing(self, medias, complete):
+        """Ask about the publications the listing did not answer.
 
-        Only what the listing could have answered is judged: with an
-        incomplete listing, a publication older than the oldest one read is
-        simply not known about.
+        Missing from a listing is not proof of a deletion, so the suspects go
+        through ``_register_remote_posts_gone`` of the base, which asks
+        Instagram about each of them. With an incomplete listing, only the
+        publications at least as recent as the oldest one read are suspects.
         """
         self.ensure_one()
-        refs = [media["id"] for media in medias if media.get("id")]
         domain = [
             ("account_id", "=", self.id),
             ("state", "=", "posted"),
             ("remote_ref", "!=", False),
-            ("remote_ref", "not in", refs),
+            ("remote_ref", "not in", [media["id"] for media in medias]),
         ]
         if not complete:
-            dates = [
-                parse_instagram_datetime(media.get("timestamp")) for media in medias
-            ]
+            dates = [parse_instagram_datetime(m.get("timestamp")) for m in medias]
             dates = [value for value in dates if value]
             if not dates:
                 return
             domain.append(("published_date", ">=", min(dates)))
-        self.env["social.post.account"].search(domain).write(
-            {"state": "deleted", "post_account_url": False}
-        )
+        suspects = self.env["social.post.account"].sudo().search(domain)
+        if suspects:
+            suspects._register_remote_posts_gone()
 
-    def _instagram_update_totals(self):
-        """Add up the figures of the publications on the account card."""
+    def _instagram_media_insights(self, remote_ref, product=None):
+        """Return the insights of one publication by metric name.
+
+        A publication answers a different set of metrics depending on its
+        kind, and Instagram refuses the whole call for a metric it does not
+        answer, so a smaller set is asked for before giving up.
+
+        :rtype: dict or None
+        """
         self.ensure_one()
-        lines = self.env["social.post.account"].search(
-            [("account_id", "=", self.id), ("state", "=", "posted")]
+        metrics = _MEDIA_METRICS_INSTAGRAM.get(
+            product or "", _MEDIA_METRICS_INSTAGRAM["DEFAULT"]
         )
-        with_reach = lines.filtered("instagram_reach")
-        self.sudo().write(
-            {
-                "like_count": sum(lines.mapped("like_count")),
-                "comment_count": sum(lines.mapped("comment_count")),
-                "share_count": sum(lines.mapped("share_count")),
-                "impression_count": int(sum(lines.mapped("impression_count"))),
-                "engagement": (
-                    round(sum(with_reach.mapped("engagement")) / len(with_reach), 2)
-                    if with_reach
-                    else 0
-                ),
-            }
-        )
-
-    def _instagram_sync_media(self, remote_ref=None):
-        """Read the publications of the account and their statistics."""
-        self.ensure_one()
-        if not self._instagram_ensure_token():
-            return False
-        try:
-            self.sudo().write(
-                self._instagram_profile_values(
-                    self._instagram_get_profile(), with_picture=False
-                )
-            )
-            if remote_ref:
-                medias = [
-                    self._request_instagram(
-                        f"/{remote_ref}", params={"fields": _MEDIA_FIELDS_INSTAGRAM}
-                    )
-                ]
-            else:
-                medias = self._instagram_fetch_media()
-        except InstagramApiError as error:
-            if error.is_token_error:
-                self._instagram_flag_token_expired(str(error))
-            raise
-        self._instagram_store_media(medias)
-        if not remote_ref:
-            self._instagram_mark_deleted(
-                medias, complete=len(medias) < _MEDIA_SYNC_LIMIT_INSTAGRAM
-            )
-        self._instagram_update_totals()
-        self.sudo().write(
-            {"need_update": False, "last_update_account": fields.Datetime.now()}
-        )
-        return True
-
-    def _instagram_accounts(self):
-        """The Instagram accounts a dashboard call is about, or ``None``."""
-        if not self:
-            return self.search([("media_type", "=", "instagram")])
-        accounts = self.filtered(lambda account: account.media_type == "instagram")
-        return accounts or None
-
-    def _update_posts_statistics(self, post_id, domain):
-        statistics = super()._update_posts_statistics(post_id, domain)
-        accounts = self._instagram_accounts()
-        if accounts is None:
-            return statistics
-        for account in accounts:
+        for metric_set in (metrics, _MEDIA_METRICS_FALLBACK_INSTAGRAM):
             try:
-                with self.env.cr.savepoint():
-                    account._instagram_sync_media(remote_ref=post_id or None)
-            except Exception as error:  # noqa: BLE001 - one account must not stop the rest
-                _logger.exception(
-                    "Error updating the Instagram account %s", account.id
+                payload = self._request_instagram(
+                    f"/{remote_ref}/insights", params={"metric": metric_set}
                 )
-                account._notify_user_client(
-                    target=account.user_id.partner_id,
-                    notif_type="social_kanban_danger",
-                    notif_message=str(error),
-                    media="instagram",
-                    account_name=account.name,
+            except InstagramApiError as error:
+                _logger.info(
+                    "Instagram refused the insights %s of media %s: %s",
+                    metric_set,
+                    remote_ref,
+                    error,
                 )
-        return self._instagram_account_statistics(statistics)
+                continue
+            return {
+                item.get("name"): self._instagram_metric_value(item)
+                for item in payload.get("data", [])
+            }
+        return None
 
-    def _instagram_account_statistics(self, statistics=None):
-        data = self.search_read(
-            [("media_type", "=", "instagram")],
-            [
-                "name",
-                "company_id",
-                "media_id",
-                "account_url",
-                "impression_count",
-                "interactions_count",
-                "engagement",
-                "need_update",
-            ],
+    @api.model
+    def _instagram_insights_values(self, insights, line):
+        """Return the figures of one publication as the fields that hold them."""
+        likes = insights.get("likes", line.like_count)
+        comments = insights.get("comments", line.comment_count)
+        shares = insights.get("shares", 0)
+        saved = insights.get("saved", 0)
+        reach = insights.get("reach", 0)
+        interactions = insights.get("total_interactions") or (
+            likes + comments + shares + saved
         )
-        return list(itertools.chain(statistics or [], data))
-
-    def action_instagram_refresh(self):
-        """Read the publications and statistics now, from the account form."""
-        self.ensure_one()
-        self._instagram_sync_media()
         return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {
-                "type": "success",
-                "message": self.env._("The Instagram statistics were updated."),
-                "next": {"type": "ir.actions.client", "tag": "soft_reload"},
-            },
+            "like_count": likes,
+            "comment_count": comments,
+            "share_count": shares,
+            "impression_count": insights.get("views", 0),
+            "instagram_reach": reach,
+            "instagram_saved": saved,
+            "engagement": engagement_rate(interactions, reach),
         }
 
-    def action_instagram_open_pending(self):
-        self.ensure_one()
-        action = self.env["ir.actions.act_window"]._for_xml_id(
-            "social_media_instagram.social_post_account_instagram_pending_action"
+    def _refresh_post_statistics(self, post_accounts):
+        """Read the figures Instagram reports for these publications.
+
+        One call per publication: Instagram has no batch endpoint for the
+        insights of media. The lines arrive already chosen by the caller, so
+        what is spent is bounded by the window of the base. A publication
+        Instagram answered nothing for keeps the figures it had and is left
+        out of the answer, since its silence is not a figure of zero.
+        """
+        instagram = post_accounts.filtered(
+            lambda line: line.media_type == "instagram" and line.remote_ref
         )
-        action["domain"] = [("account_id", "=", self.id), ("state", "=", "manual")]
-        return action
+        refreshed = super()._refresh_post_statistics(post_accounts - instagram)
+        for account, lines in instagram.grouped("account_id").items():
+            with account._account_guard(on_error=account._instagram_notify_failure):
+                refreshed |= account._instagram_write_post_statistics(lines)
+        return refreshed
+
+    def _instagram_write_post_statistics(self, post_accounts):
+        self.ensure_one()
+        answered = post_accounts.browse()
+        read_on = fields.Datetime.now()
+        for line in post_accounts:
+            insights = self._instagram_media_insights(
+                line.remote_ref, line.instagram_media_product_type
+            )
+            if insights is None:
+                continue
+            line.sudo().write(
+                {
+                    **self._instagram_insights_values(insights, line),
+                    "statistics_date": read_on,
+                }
+            )
+            answered |= line
+        return answered
 
     # ------------------------------------------------------------------
-    # Charts
+    # Daily series
     # ------------------------------------------------------------------
 
-    def _instagram_fetch_account_totals(self, url, token, since, until):
+    def _instagram_fetch_day_totals(self, url, token, since, until):
         """Return the account totals Instagram reports between two instants.
 
-        Runs in the threads of :meth:`_instagram_bucket_statistics`, so it
-        only does HTTP and never touches the database.
+        Runs in the threads of :meth:`_instagram_day_statistics`, so it only
+        does HTTP and never touches the database.
 
         :rtype: dict
         """
@@ -891,186 +829,221 @@ class SocialAccount(models.Model):
             try:
                 self._instagram_raise_for_payload(status, payload)
             except InstagramApiError as error:
-                if error.is_token_error:
-                    raise
                 _logger.info("Instagram refused the account insights: %s", error)
                 continue
             return {
                 item.get("name"): self._instagram_metric_value(item)
                 for item in payload.get("data", [])
             }
-        return {}
-
-    def _instagram_bucket_statistics(self, buckets):
-        """Return the six figures the chart draws, one tuple per bucket.
-
-        The figures are the ones ``_map_chart_statistics`` reads: clicks
-        (taps on the profile links), likes, comments, shares, engagement rate
-        and views. A bucket wider than what Instagram answers at once is asked
-        in several ranges and added up, which over-counts the reach of the
-        accounts seen in both a little; the views and interactions are exact.
-        """
-        self.ensure_one()
-        token = self.sudo().access_token
-        url = self._instagram_url("/me/insights")
-        today = fields.Date.today()
-        oldest = today - timedelta(days=_INSIGHTS_MAX_AGE_DAYS_INSTAGRAM)
-        now_ts = int(fields.Datetime.now().timestamp())
-        jobs = []
-        for index, (first, last) in enumerate(buckets):
-            first, last = max(first, oldest), min(last, today)
-            if first > last:
-                continue
-            for chunk_from, chunk_to in split_range(first, last):
-                jobs.append(
-                    (
-                        index,
-                        day_timestamp(chunk_from),
-                        min(day_timestamp(chunk_to + timedelta(days=1)), now_ts),
-                    )
-                )
-        totals = [{} for __ in buckets]
-
-        def fetch(job):
-            return job[0], self._instagram_fetch_account_totals(
-                url, token, job[1], job[2]
-            )
-
-        if jobs:
-            with ThreadPoolExecutor(max_workers=_CHART_WORKERS_INSTAGRAM) as executor:
-                for index, values in executor.map(fetch, jobs):
-                    for name, value in values.items():
-                        totals[index][name] = totals[index].get(name, 0) + (value or 0)
-        statistics = []
-        for values in totals:
-            interactions = values.get("total_interactions") or sum(
-                values.get(name, 0) for name in ("likes", "comments", "shares", "saves")
-            )
-            statistics.append(
-                (
-                    values.get("profile_links_taps", 0),
-                    values.get("likes", 0),
-                    values.get("comments", 0),
-                    values.get("shares", 0),
-                    engagement_rate(interactions, values.get("reach", 0)),
-                    values.get("views", 0),
-                )
-            )
-        return statistics
-
-    def _get_chart_account_statistics(
-        self, start_date=None, end_date=None, granularity="WEEK"
-    ):
-        data = super()._get_chart_account_statistics(start_date, end_date, granularity)
-        accounts = self._instagram_accounts()
-        if not accounts:
-            return data
-        freq = {"DAY": "D", "MONTH": "ME"}.get(granularity, "W-MON")
-        data_instagram = []
-        for account in accounts:
-            start, end = account._get_default_filter_date(start_date, end_date)
-            try:
-                if not account._instagram_ensure_token():
-                    continue
-                statistics = account._instagram_bucket_statistics(
-                    chart_buckets(start, end, freq)
-                )
-            except InstagramApiError as error:
-                _logger.warning(
-                    "Could not read the Instagram insights of account %s: %s",
-                    account.id,
-                    error,
-                )
-                account._notify_user_client(
-                    notif_type="social_kanban_danger",
-                    notif_message=str(error),
-                    media="instagram",
-                    account_name=account.name,
-                )
-                continue
-            if statistics:
-                data_instagram += account._map_chart_statistics(
-                    statistics, freq=freq, start_date=start, end_date=end
-                )
-        return list(itertools.chain(data, data_instagram))
-
-    # ------------------------------------------------------------------
-    # Crons
-    # ------------------------------------------------------------------
-
-    def _instagram_check_updates(self):
-        """Look at the latest publications for what was published by hand.
-
-        A planned publication found there is linked to its plan right away,
-        with its statistics. Anything else that is new only raises the
-        notice of the dashboard, like the LinkedIn connector does.
-
-        :return: whether something new is left to synchronize.
-        :rtype: bool
-        """
-        self.ensure_one()
-        medias = self._instagram_fetch_media(limit=_MEDIA_CHECK_LIMIT_INSTAGRAM)
-        unknown = self._instagram_store_media(medias, create_unknown=False)
-        if unknown and not self.need_update:
-            self.sudo().write({"need_update": True})
-            self.env["bus.bus"]._sendone(
-                self.user_id.partner_id,
-                "social_need_update",
-                {"need_update": True},
-            )
-        return bool(unknown)
-
-    def _run_check_media_updates(self):
-        update = super()._run_check_media_updates()
-        accounts = self.sudo().search(
-            [("media_type", "=", "instagram"), ("instagram_token_expired", "=", False)]
-        )
-        for account in accounts:
-            try:
-                with self.env.cr.savepoint():
-                    if account._instagram_ensure_token():
-                        update = account._instagram_check_updates() or update
-            except InstagramApiError as error:
-                if error.is_token_error:
-                    account._instagram_flag_token_expired(str(error))
-                _logger.warning(
-                    "Error checking the Instagram account %s: %s", account.id, error
-                )
-            except Exception:  # noqa: BLE001 - one account must not stop the rest
-                _logger.exception("Error checking the Instagram account %s", account.id)
-        return update
+        return None
 
     @api.model
-    def _cron_instagram_refresh_statistics(self):
-        """Refresh the publications and statistics of every Instagram account."""
+    def _instagram_statistics_values(self, totals):
+        """Return the totals of one day as the fields of the daily series.
+
+        The taps on the links of the profile are the clicks Instagram
+        reports, the views its impressions, and the engagement is the ratio
+        of the interactions over the accounts reached.
+        """
+        interactions = totals.get("total_interactions") or sum(
+            totals.get(name, 0) for name in ("likes", "comments", "shares", "saves")
+        )
+        return {
+            "click_count": totals.get("profile_links_taps", 0),
+            "like_count": totals.get("likes", 0),
+            "comment_count": totals.get("comments", 0),
+            "share_count": totals.get("shares", 0),
+            "impression_count": totals.get("views", 0),
+            "engagement": engagement_rate(interactions, totals.get("reach", 0)),
+            "instagram_reach": totals.get("reach", 0),
+            "instagram_saves": totals.get("saves", 0),
+        }
+
+    def _instagram_day_statistics(self, date_from, date_to):
+        """Ask Instagram for the totals of every day of the range.
+
+        One call per day, in parallel: Instagram answers a total over the
+        range it is asked for and no series of days for these metrics. The
+        days it cannot answer (too old, still to come) are not asked.
+
+        :return: the values of the series, keyed by day.
+        :rtype: dict
+        """
+        self.ensure_one()
+        today = fields.Date.today()
+        first = max(fields.Date.to_date(date_from), today - timedelta(days=_INSIGHTS_MAX_AGE_DAYS_INSTAGRAM))
+        last = min(fields.Date.to_date(date_to), today)
+        if first > last:
+            return {}
+        url = self._instagram_url("/me/insights")
+        token = self.sudo().access_token
+        now_ts = int(fields.Datetime.now().timestamp())
+        days = [first + timedelta(days=offset) for offset in range((last - first).days + 1)]
+
+        def fetch(day):
+            until = min(day_timestamp(day + timedelta(days=1)), now_ts)
+            return day, self._instagram_fetch_day_totals(
+                url, token, day_timestamp(day), until
+            )
+
+        with ThreadPoolExecutor(max_workers=_STATISTICS_WORKERS_INSTAGRAM) as executor:
+            answers = list(executor.map(fetch, days))
+        return {
+            day: self._instagram_statistics_values(totals)
+            for day, totals in answers
+            if totals is not None
+        }
+
+    def _instagram_snapshot_accounts(self, date_from, date_to):
+        """Write the daily series of these accounts, each one on its own.
+
+        The token is checked first (cheap: dates only), and each account goes
+        in the guard of the base, so one Instagram refuses neither rolls back
+        nor stops the others; its responsible user is told why.
+        """
+        for account in self:
+            with account._account_guard(on_error=account._instagram_notify_failure):
+                account.with_context(not_notify=True)._instagram_validate_access_token()
+                account._write_statistics_rows(
+                    account._instagram_day_statistics(date_from, date_to)
+                )
+
+    def _snapshot_statistics(self, date_from, date_to):
+        instagram = self.filtered(lambda account: account.media_type == "instagram")
+        instagram._instagram_snapshot_accounts(date_from, date_to)
+        return super(SocialAccount, self - instagram)._snapshot_statistics(
+            date_from, date_to
+        )
+
+    @api.model
+    def _instagram_refresh_window(self):
+        date_to = fields.Date.today()
+        return date_to - timedelta(days=_STATISTICS_REFRESH_DAYS_INSTAGRAM), date_to
+
+    @api.model
+    def _instagram_backfill_window(self):
+        date_to = fields.Date.today()
+        return date_to - timedelta(days=_STATISTICS_HISTORY_DAYS_INSTAGRAM), date_to
+
+    def _refresh_statistics(self):
+        instagram = self.filtered(lambda account: account.media_type == "instagram")
+        if instagram:
+            instagram._instagram_snapshot_accounts(*self._instagram_refresh_window())
+        return (
+            bool(instagram)
+            or super(SocialAccount, self - instagram)._refresh_statistics()
+        )
+
+    def _instagram_statistics_backfilled(self):
+        """Whether the series already reaches past the refresh window.
+
+        The refresh only writes the last days, so an older row can only come
+        from a backfill that already ran: the series is its own answer.
+        """
+        self.ensure_one()
+        return bool(
+            self.env["social.account.statistics"]
+            .sudo()
+            .search_count(
+                [
+                    ("account_id", "=", self.id),
+                    ("date", "<", self._instagram_refresh_window()[0]),
+                ],
+                limit=1,
+            )
+        )
+
+    def _backfill_statistics(self, force=False):
+        instagram = self.filtered(lambda account: account.media_type == "instagram")
+        pending = (
+            instagram
+            if force
+            else instagram.filtered(
+                lambda account: not account._instagram_statistics_backfilled()
+            )
+        )
+        if pending:
+            pending._instagram_snapshot_accounts(*self._instagram_backfill_window())
+        return super(SocialAccount, self - instagram)._backfill_statistics(force=force)
+
+    # ------------------------------------------------------------------
+    # Crons and actions
+    # ------------------------------------------------------------------
+
+    def _run_check_media_updates(self):
+        """Import the latest publications and rewrite the last days.
+
+        The base renews the credentials of every account first and flags the
+        ones Instagram refused; those are left out here, since asking them
+        would only spend a call to learn what the flag already says. Each
+        account is read in its own guard.
+        """
+        update = super()._run_check_media_updates()
         accounts = self.sudo().search(
-            [("media_type", "=", "instagram"), ("instagram_token_expired", "=", False)]
+            self._get_check_media_updates_domain()
+            + [("media_type", "=", "instagram"), ("need_update", "=", False)]
         )
         for account in accounts:
-            try:
-                with self.env.cr.savepoint():
-                    account._instagram_sync_media()
-            except Exception:  # noqa: BLE001 - one account must not stop the rest
-                _logger.exception(
-                    "Error refreshing the Instagram account %s", account.id
-                )
+            with account._account_guard(on_error=account._instagram_notify_failure):
+                account._instagram_import_media()
+        accounts._refresh_statistics()
+        return update
+
+    def _instagram_notify_failure(self, error):
+        """Tell the responsible user why the account could not be read."""
+        self.ensure_one()
+        _logger.warning(
+            "Error reading the Instagram account %s: %s", self.id, error
+        )
+        if isinstance(error, SocialCredentialsError):
+            self._flag_credentials_expired(str(error))
+            return
+        self._notify_user(
+            target=self.user_id.partner_id,
+            notif_type="social_kanban_danger",
+            notif_message=str(error),
+            media="instagram",
+            account_name=self.name,
+        )
+
+    def action_instagram_import(self):
+        """Import the latest publications now, from the account form."""
+        self.ensure_one()
+        self.with_context(not_notify=True)._instagram_validate_access_token()
+        self._instagram_import_media()
+        self._refresh_account_statistics()
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "type": "success",
+                "message": self.env._("The Instagram publications were imported."),
+                "next": {"type": "ir.actions.client", "tag": "soft_reload"},
+            },
+        }
+
+    def action_instagram_open_pending(self):
+        self.ensure_one()
+        action = self.env["ir.actions.act_window"]._for_xml_id(
+            "social_media_instagram.social_post_account_instagram_pending_action"
+        )
+        action["domain"] = [("account_id", "=", self.id), ("state", "=", "manual")]
+        return action
 
     def _instagram_notify_due(self, lines):
         """Ping the responsible users of the publications that are now due."""
         for account in lines.account_id:
+            count = len(lines.filtered(lambda line, acc=account: line.account_id == acc))
             account._notify_user_client(
                 target=account.user_id.partner_id,
                 notif_type="social_kanban_info",
-                notif_message=Markup(
-                    self.env._(
-                        "%(count)s publication(s) are due on @%(username)s. "
-                        "Publish them in the Instagram app."
-                    )
-                )
-                % {
-                    "count": len(lines.filtered(lambda line, a=account: line.account_id == a)),
-                    "username": account.username or account.name,
-                },
+                notif_message=Markup("%s")
+                % self.env._(
+                    "%(count)s publication(s) are due on @%(username)s. Publish "
+                    "them in the Instagram app.",
+                    count=count,
+                    username=account.username or account.name,
+                ),
                 media="instagram",
                 account_name=account.name,
             )

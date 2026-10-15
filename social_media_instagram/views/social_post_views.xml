@@ -33,8 +33,8 @@
                     invisible="state != 'manual'"
                 >
                     <i class="fa fa-hand-pointer-o me-1" title="Manual" />
-                    This post is due: publish it in the Instagram app. It is
-                    detected automatically within 30 minutes, or press
+                    This post is due: publish it in the Instagram app. Odoo links
+                    it on the next check for updates (every two hours), or press
                     <i>Mark as published on Instagram</i>.
                 </div>
             </xpath>
@@ -44,12 +44,12 @@
                 <field
                     name="instagram_post_format"
                     invisible="not has_instagram"
-                    readonly="state != 'draft'"
+                    readonly="state != 'draft' or content_locked"
                 />
                 <field
                     name="instagram_first_comment"
                     invisible="not has_instagram"
-                    readonly="state not in ('draft', 'planned', 'manual')"
+                    readonly="state not in ('draft', 'planned', 'manual') or content_locked"
                     placeholder="#hashtags to paste as first comment"
                 />
                 <field

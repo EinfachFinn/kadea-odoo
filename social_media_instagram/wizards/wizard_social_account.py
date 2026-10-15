@@ -88,7 +88,7 @@ class WizardSocialAccount(models.TransientModel):
         if self.media_type != "instagram":
             return super()._update_account()
         account = self.account_id
-        if self.update_keys or account.instagram_token_expired:
+        if self.update_keys or account.need_update:
             # A new authorization in the browser, which the callback closes
             # on this very wizard.
             self._instagram_fill_keys_from_account()
@@ -102,4 +102,6 @@ class WizardSocialAccount(models.TransientModel):
                 account_name=account.name,
             )
             return True
-        return account.action_instagram_check_connection()
+        account.with_context(check_remote_token=True).validate_access_token()
+        account.sudo().write({"last_update_account": fields.Datetime.now()})
+        return True

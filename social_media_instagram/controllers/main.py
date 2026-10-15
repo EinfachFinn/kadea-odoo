@@ -16,22 +16,23 @@ class SocialMediaInstagram(http.Controller):
     def social_instagram_callback(
         self, code=None, state=None, error=None, error_description=None, **kwargs
     ):
-        SocialAccount = request.env["social.account"]
+        # Everything reached from here answers through a redirect, so the
+        # notifications go to the session instead of the bus. See
+        # ``social.media.base.mixin._notify_user``.
+        SocialAccount = request.env["social.account"].with_context(
+            social_media_oauth_callback=True
+        )
         # The wizard is looked up by its state token and its creator, so a
         # state leaking out of the authorization URL is useless elsewhere.
-        wizard = (
-            request.env["wizard.social.account"]
-            .sudo()
-            .search(
+        wizard = request.env["wizard.social.account"]
+        if state:
+            wizard = wizard.sudo().search(
                 [
-                    ("csrf_state_token", "=", state or "-"),
+                    ("csrf_state_token", "=", state),
                     ("create_uid", "=", request.env.user.id),
                 ],
                 limit=1,
             )
-            if state
-            else request.env["wizard.social.account"]
-        )
         try:
             if error:
                 raise UserError(
@@ -71,20 +72,14 @@ class SocialMediaInstagram(http.Controller):
                 message_type="success",
             )
         except (AccessError, UserError) as e:
+            # Written for the end user and explaining what to do, so they are
+            # the useful feedback of the association flow.
             SocialAccount._notify_user_session(
                 SocialAccount._format_user_notification(str(e), media="instagram")
             )
             _logger.warning("Error in the Instagram OAuth callback: %s", e)
         except Exception:  # noqa: BLE001 - the provider may fail in any way
-            SocialAccount._notify_user_session(
-                SocialAccount._format_user_notification(
-                    request.env._(
-                        "The account could not be associated. Check the server "
-                        "log for details."
-                    ),
-                    media="instagram",
-                )
-            )
+            SocialAccount._notify_association_failure("instagram")
             _logger.exception("Error in the Instagram OAuth callback")
         finally:
             wizard.sudo().unlink()

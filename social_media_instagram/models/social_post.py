@@ -25,12 +25,11 @@ _LARGE_IMAGE_INSTAGRAM = 8 * 1024 * 1024
 class SocialPost(models.Model):
     """Plan Instagram publications without ever uploading them.
 
-    Instagram is the only social media of the suite that is published by
-    hand. When the date of a post comes, the Instagram publications are not
-    sent anywhere: they wait in the state *To publish manually*, the
-    responsible user has a to-do with the caption and the medias, and the
+    Instagram is published by hand. When a post is sent, its Instagram
+    publications are not sent anywhere: they wait in the state *To publish
+    manually*, the responsible user has a to-do with the caption, and the
     publication joins its plan as soon as the user publishes it in the
-    Instagram app, either detected automatically or marked by hand.
+    Instagram app, detected by the check for updates or marked by hand.
     """
 
     _inherit = "social.post"
@@ -54,8 +53,8 @@ class SocialPost(models.Model):
     instagram_first_comment = fields.Text(
         string="First Comment",
         help="Text to publish as the first comment right after the post, "
-        "typically the hashtags. It is copied from the to-do, nothing is "
-        "published automatically.",
+        "typically the hashtags. It is copied from the publication, nothing "
+        "is published automatically.",
     )
     instagram_publish_notes = fields.Text(
         string="Publishing Notes",
@@ -83,47 +82,60 @@ class SocialPost(models.Model):
     def _compute_color(self):
         res = super()._compute_color()
         for post in self.filtered(lambda post: post.state == "manual"):
-            post.color = 3
+            post.color = 9
         return res
 
     @api.depends("state", "any_failed_post", "send_post", "message", "account_ids")
     def _compute_hide_post(self):
+        """Sending again has nothing left to do while the user publishes."""
         res = super()._compute_hide_post()
-        for post in self.filtered(lambda post: post.state == "manual"):
+        for post in self.filtered(
+            lambda post: post.state == "manual" and not post.any_failed_post
+        ):
             post.hide_post = True
         return res
 
     def _default_account_ids(self):
-        res = super()._default_account_ids()
-        accounts = (
-            self.env["social.account"]
-            .with_company(self.env.company)
-            .search([("media_type", "=", "instagram")])
+        """Preselect the Instagram accounts of the active company."""
+        return (
+            self._default_account_ids_for_media("instagram")
+            + super()._default_account_ids()
         )
-        return accounts.ids + [account_id for account_id in res if account_id not in accounts.ids]
+
+    def _get_locked_content_fields(self):
+        """The format and the first comment are part of what was published."""
+        return super()._get_locked_content_fields() + (
+            "instagram_post_format",
+            "instagram_first_comment",
+        )
 
     # ------------------------------------------------------------------
     # Rules of Instagram
     # ------------------------------------------------------------------
 
-    def _instagram_check(self):
-        """Return what Instagram refuses, and what it publishes differently.
+    def _get_post_errors(self, media_type, account=None):
+        """Add what the Instagram app refuses to publish.
 
-        :return: the errors and the warnings.
-        :rtype: tuple
+        Only the limits the app itself enforces stop the publication, since
+        a post that breaks them cannot be published by hand either: the
+        length of the caption, the hashtags and mentions it counts, a post
+        without any media, and the shape of a carousel, a reel or a story.
+        What the app merely handles differently is a warning.
         """
-        self.ensure_one()
-        errors, warnings = [], []
-        message = self.message or ""
+        errors = super()._get_post_errors(media_type, account=account)
+        if media_type != "instagram":
+            return errors
+        message = self._get_checked_message()
         images, videos = self.image_ids, self.video_ids
         medias = len(images) + len(videos)
         if len(message) > _MAX_CAPTION_LENGTH_INSTAGRAM:
             errors.append(
                 self.env._(
-                    "Instagram: the caption has %(length)s characters, at most "
-                    "%(limit)s are allowed.",
-                    length=len(message),
+                    "Instagram publishes captions of at most %(limit)s "
+                    "characters, and this one has %(length)s. Shorten the "
+                    "message to publish it.",
                     limit=_MAX_CAPTION_LENGTH_INSTAGRAM,
+                    length=len(message),
                 )
             )
         for text, label in (
@@ -133,8 +145,8 @@ class SocialPost(models.Model):
             if count_hashtags(text) > _MAX_HASHTAGS_INSTAGRAM:
                 errors.append(
                     self.env._(
-                        "Instagram: the %(label)s has %(count)s hashtags, at "
-                        "most %(limit)s are allowed.",
+                        "Instagram allows at most %(limit)s hashtags, and the "
+                        "%(label)s has %(count)s.",
                         label=label,
                         count=count_hashtags(text),
                         limit=_MAX_HASHTAGS_INSTAGRAM,
@@ -143,8 +155,8 @@ class SocialPost(models.Model):
             if count_mentions(text) > _MAX_MENTIONS_INSTAGRAM:
                 errors.append(
                     self.env._(
-                        "Instagram: the %(label)s mentions %(count)s accounts, "
-                        "at most %(limit)s are allowed.",
+                        "Instagram allows at most %(limit)s mentions, and the "
+                        "%(label)s has %(count)s.",
                         label=label,
                         count=count_mentions(text),
                         limit=_MAX_MENTIONS_INSTAGRAM,
@@ -152,37 +164,50 @@ class SocialPost(models.Model):
                 )
         if not medias:
             errors.append(
-                self.env._("Instagram: a post needs at least one image or video.")
+                self.env._(
+                    "Instagram publishes no post without an image or a video. "
+                    "Add at least one to publish it."
+                )
             )
         post_format = self.instagram_post_format or "feed"
         if post_format == "feed" and medias > _MAX_CAROUSEL_ITEMS_INSTAGRAM:
             errors.append(
                 self.env._(
-                    "Instagram: a carousel holds at most %(limit)s images and "
-                    "videos, this post has %(count)s.",
+                    "An Instagram carousel holds at most %(limit)s images and "
+                    "videos, and this post carries %(count)s.",
                     limit=_MAX_CAROUSEL_ITEMS_INSTAGRAM,
                     count=medias,
                 )
             )
         if post_format == "reel" and (len(videos) != 1 or images):
             errors.append(
-                self.env._("Instagram: a reel is exactly one video, without images.")
+                self.env._(
+                    "An Instagram reel is exactly one video, without images."
+                )
             )
         if post_format == "story" and medias > 1:
             errors.append(
                 self.env._(
-                    "Instagram: a story is a single image or video; create one "
+                    "An Instagram story is a single image or video; create one "
                     "post per story."
                 )
             )
+        return errors
+
+    def _get_post_warnings(self, media_type, account=None):
+        """Add what the Instagram app handles differently from Odoo."""
+        warnings = super()._get_post_warnings(media_type, account=account)
+        if media_type != "instagram":
+            return warnings
+        images, videos = self.image_ids, self.video_ids
         wrong_images = images.filtered(
             lambda att: (att.mimetype or "").lower() not in _IMAGE_MIMETYPES_INSTAGRAM
         )
         if wrong_images:
             warnings.append(
                 self.env._(
-                    "Instagram: %(names)s may not be accepted by the app, use "
-                    "JPG or PNG.",
+                    "The Instagram app may not accept %(names)s; JPG or PNG "
+                    "are safe.",
                     names=", ".join(wrong_images.mapped("name")),
                 )
             )
@@ -190,8 +215,8 @@ class SocialPost(models.Model):
         if large_images:
             warnings.append(
                 self.env._(
-                    "Instagram: %(names)s are larger than %(size)s and will be "
-                    "compressed by the app.",
+                    "%(names)s are larger than %(size)s and will be compressed "
+                    "by the Instagram app.",
                     names=", ".join(large_images.mapped("name")),
                     size=human_size(_LARGE_IMAGE_INSTAGRAM),
                 )
@@ -202,29 +227,12 @@ class SocialPost(models.Model):
         if wrong_videos:
             warnings.append(
                 self.env._(
-                    "Instagram: %(names)s may not be accepted by the app, use "
-                    "MP4 or MOV.",
+                    "The Instagram app may not accept %(names)s; MP4 or MOV "
+                    "are safe.",
                     names=", ".join(wrong_videos.mapped("name")),
                 )
             )
-        return errors, warnings
-
-    @api.depends(
-        "account_ids",
-        "message",
-        "image_ids",
-        "video_ids",
-        "instagram_post_format",
-        "instagram_first_comment",
-    )
-    def _compute_message_info(self):
-        res = super()._compute_message_info()
-        for post in self.filtered("has_instagram"):
-            errors, warnings = post._instagram_check()
-            lines = [post.message_info] if post.message_info else []
-            lines += errors + warnings
-            post.message_info = "\n".join(lines) or False
-        return res
+        return warnings
 
     # ------------------------------------------------------------------
     # Workflow
@@ -240,21 +248,23 @@ class SocialPost(models.Model):
         res = super().write(vals)
         if not self.env.context.get("instagram_no_activity_sync") and any(
             key in vals
-            for key in ("state", "send_post", "send_post_date", "account_ids", "user_id", "active")
+            for key in (
+                "state",
+                "send_post",
+                "send_post_date",
+                "account_ids",
+                "user_id",
+                "active",
+            )
         ):
             self._instagram_sync_activity()
-        return res
-
-    def _action_create_post_account(self):
-        res = super()._action_create_post_account()
-        self._instagram_update_state()
         return res
 
     def action_draft(self):
         """Take the publications waiting to be published by hand back too.
 
         Back in draft, the post is planned again from scratch: the next time
-        it is due, its Instagram publications are checked and announced
+        it is sent, its Instagram publications are checked and announced
         again.
         """
         self.post_account_ids.filtered(lambda line: line.state == "manual").write(
@@ -262,41 +272,44 @@ class SocialPost(models.Model):
         )
         return super().action_draft()
 
-    def _instagram_update_state(self):
-        """Set the state of the posts from their publications.
+    def _close_publication(self):
+        """A post whose open publications wait for the user is *manual*.
 
-        The base only knows *published*, and *draft* when everything failed;
-        a post whose remaining publications wait to be published by hand is
-        neither, it is *To publish manually*, which also keeps it out of the
-        cron that sends the planned posts. A post whose only failures are
-        Instagram rules goes back to draft instead of being retried every
-        five minutes: nothing changes until the user fixes it.
+        The base reads publications that are neither posted nor failed as a
+        publication still running, and keeps the post in *publishing*, which
+        the cron sends again every five minutes. A publication waiting to be
+        published by hand is not running anywhere: when it is all that is
+        left, the post is *To publish manually*, out of the reach of the
+        cron, whatever the other social media already published. A failed
+        publication still leads, so the user sees it and retries it.
         """
+        self.ensure_one()
+        lines = self.post_account_ids
+        manual = lines.filtered(lambda line: line.state == "manual")
+        if not manual or lines.filtered(lambda line: line.state == "ready"):
+            return super()._close_publication()
+        if lines.filtered(lambda line: line.state == "failed"):
+            if lines.filtered(lambda line: line.state == "posted"):
+                # Out of the cron already, and the base tells the users of
+                # the accounts that failed.
+                return super()._close_publication()
+            # Nothing reached a social media: back to draft, as the base does
+            # when everything failed, instead of being sent again every five
+            # minutes. The Instagram publications keep waiting for the user.
+            self.write({"state": "draft"})
+            return None
+        values = {"state": "manual"}
+        if lines.filtered(lambda line: line.state == "posted") and not self.published_date:
+            values["published_date"] = fields.Datetime.now()
+        self.write(values)
+        return None
+
+    def _instagram_after_manual_publication(self):
+        """Close the posts whose last manual publication was just linked."""
         for post in self:
-            lines = post.post_account_ids
-            if not lines or post.state not in ("publishing", "manual"):
+            if post.state != "manual" or post.instagram_pending_count:
                 continue
-            pending = lines.filtered(
-                lambda line: line.state not in ("posted", "manual", "deleted")
-            )
-            if pending:
-                if all(
-                    line.state == "failed" and line.media_type == "instagram"
-                    for line in pending
-                ):
-                    post.state = "draft"
-                continue
-            if lines.filtered(lambda line: line.state == "manual"):
-                post.state = "manual"
-            else:
-                post.write(
-                    {
-                        "state": "published",
-                        "published_date": post.published_date
-                        or max(lines.mapped("published_date") or [fields.Datetime.now()]),
-                    }
-                )
-        self._instagram_sync_activity()
+            post._close_publication()
 
     def action_instagram_open_pending(self):
         """Open what is left to publish by hand on Instagram for this post."""
@@ -321,11 +334,9 @@ class SocialPost(models.Model):
             return self.account_ids.filtered(
                 lambda account: account.media_type == "instagram"
             )
-        if self.state == "manual":
-            return self.post_account_ids.filtered(
-                lambda line: line.state == "manual"
-            ).account_id
-        return self.env["social.account"]
+        return self.post_account_ids.filtered(
+            lambda line: line.state == "manual"
+        ).account_id
 
     def _instagram_deadline(self):
         """The day the post is due, in the time zone of its responsible."""
@@ -341,10 +352,11 @@ class SocialPost(models.Model):
             if self.send_post_date
             else self.env._("now")
         )
-        note = Markup(
-            "<p>%s</p><ul>%s</ul><p><b>%s</b></p><p>%s</p>"
-        ) % (
-            self.env._("Publish this post by hand in the Instagram app on %(when)s.", when=when),
+        note = Markup("<p>%s</p><ul>%s</ul><p><b>%s</b></p><p>%s</p>") % (
+            self.env._(
+                "Publish this post by hand in the Instagram app on %(when)s.",
+                when=when,
+            ),
             Markup("").join(
                 Markup("<li>@%s</li>") % (account.username or account.name)
                 for account in accounts
@@ -359,7 +371,7 @@ class SocialPost(models.Model):
             )
         return note + Markup("<p><i>%s</i></p>") % self.env._(
             "Odoo links the publication by itself once it appears on the "
-            "account, or use 'Mark as published' on the post."
+            "account, or use 'Mark as published on Instagram' on the post."
         )
 
     def _instagram_sync_activity(self):
@@ -372,7 +384,11 @@ class SocialPost(models.Model):
         todo = self.env.ref("mail.mail_activity_data_todo", raise_if_not_found=False)
         for post in self.with_context(instagram_no_activity_sync=True):
             activity = post.instagram_activity_id.exists()
-            accounts = post._instagram_pending_accounts() if post.active else False
+            accounts = (
+                post._instagram_pending_accounts()
+                if post.active and post.state in ("planned", "manual")
+                else False
+            )
             if accounts:
                 values = {
                     "date_deadline": post._instagram_deadline(),
@@ -393,10 +409,8 @@ class SocialPost(models.Model):
             published = post.post_account_ids.filtered(
                 lambda line: line.media_type == "instagram" and line.state == "posted"
             )
-            if published and post.state in ("published", "publishing"):
-                activity.action_feedback(
-                    feedback=self.env._("Published on Instagram.")
-                )
+            if published and post.state in ("published", "partially_published"):
+                activity.action_feedback(feedback=self.env._("Published on Instagram."))
             else:
                 activity.unlink()
             post.instagram_activity_id = False

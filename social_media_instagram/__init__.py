@@ -4,8 +4,7 @@ from . import controllers
 from . import models
 from . import wizards
 
-from odoo.addons.social_media_base import remove_social_media
-
 
 def uninstall_hook(env):
-    remove_social_media(env, "instagram")
+    """Archive the Instagram accounts and drop their credentials."""
+    env["social.account"]._remove_social_media("instagram")

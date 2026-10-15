@@ -3,6 +3,8 @@
 from odoo import fields, models
 from odoo.exceptions import UserError
 
+from odoo.addons.social_media_base.exceptions import SocialCredentialsError
+
 from ..social_instagram_utils import shortcode_from_url
 
 
@@ -38,7 +40,10 @@ class WizardInstagramMarkPublished(models.TransientModel):
                 )
             )
         account = line.account_id
-        if account.instagram_token_expired or not account._instagram_ensure_token():
+        try:
+            account.with_context(not_notify=True)._instagram_validate_access_token()
+        except SocialCredentialsError as error:
+            account._flag_credentials_expired(str(error))
             if not self.permalink:
                 raise UserError(
                     self.env._(
@@ -46,7 +51,7 @@ class WizardInstagramMarkPublished(models.TransientModel):
                         "Odoo cannot look the publication up. Paste its link, "
                         "or update the account first."
                     )
-                )
+                ) from error
             line._instagram_mark_published_without_api(self.permalink)
             return {"type": "ir.actions.act_window_close"}
         medias = account._instagram_fetch_media(limit=50)
