@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record id="wizard_social_account_view_form_inherit" model="ir.ui.view">
+        <field name="name">wizard.social.account.view.form.inherit.instagram</field>
+        <field name="model">wizard.social.account</field>
+        <field
+            name="inherit_id"
+            ref="social_media_base.wizard_social_account_view_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='social_account_data']" position="before">
+                <div
+                    class="alert alert-info"
+                    role="alert"
+                    invisible="media_type != 'instagram' or context.get('social_update_account', False)"
+                >
+                    Connect an Instagram <b>professional</b> account (business
+                    or creator) through a Meta app with the product
+                    <i>Instagram API with Instagram login</i>. Copy the
+                    Instagram App ID and secret from
+                    <i>Instagram > API setup with Instagram login</i> and add
+                    the redirect URI below to its business login settings.
+                    Odoo only reads the account: posts are planned here and
+                    published by hand, nothing is uploaded.
+                </div>
+            </xpath>
+            <xpath expr="//group[@name='social_account_data']" position="inside">
+                <field name="media_type" invisible="1" />
+                <field
+                    name="instagram_app_id"
+                    required="media_type == 'instagram' and not context.get('social_update_account', False)"
+                    invisible="media_type != 'instagram' or (not update_keys and context.get('social_update_account', False))"
+                />
+                <field
+                    name="instagram_app_secret"
+                    password="True"
+                    required="media_type == 'instagram' and not context.get('social_update_account', False)"
+                    invisible="media_type != 'instagram' or (not update_keys and context.get('social_update_account', False))"
+                />
+                <field
+                    name="instagram_redirect_uri"
+                    widget="CopyClipboardChar"
+                    invisible="media_type != 'instagram'"
+                />
+            </xpath>
+        </field>
+    </record>
+</odoo>

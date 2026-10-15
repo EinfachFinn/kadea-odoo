@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record id="wizard_instagram_mark_published_view_form" model="ir.ui.view">
+        <field name="name">wizard.instagram.mark.published.view.form</field>
+        <field name="model">wizard.instagram.mark.published</field>
+        <field name="arch" type="xml">
+            <form>
+                <p>
+                    Paste the link of the publication made in the Instagram app,
+                    or leave it empty: Odoo then looks for the latest
+                    publication of the account that starts with the planned
+                    caption. Its statistics are read from then on.
+                </p>
+                <group>
+                    <field name="post_account_id" invisible="1" />
+                    <field name="account_id" readonly="1" />
+                    <field
+                        name="permalink"
+                        placeholder="https://www.instagram.com/p/..."
+                    />
+                    <field name="message" readonly="1" string="Planned caption" />
+                </group>
+                <footer>
+                    <button
+                        name="action_confirm"
+                        type="object"
+                        string="Confirm"
+                        class="btn-primary"
+                        data-hotkey="q"
+                    />
+                    <button string="Cancel" special="cancel" data-hotkey="x" />
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

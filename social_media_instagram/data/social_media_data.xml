@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <data noupdate="1">
+        <record id="social_media_instagram" model="social.media">
+            <field name="name">Instagram</field>
+            <field name="media_type">instagram</field>
+            <field
+                name="description"
+            >Plan your Instagram posts, publish them by hand and follow their statistics</field>
+            <field
+                name="image"
+                type="base64"
+                file="social_media_instagram/static/description/icon.png"
+            />
+        </record>
+
+        <record id="refresh_instagram_statistics_job" model="ir.cron">
+            <field name="name">Social Instagram: Refresh publications and statistics</field>
+            <field name="model_id" ref="social_media_base.model_social_account" />
+            <field name="state">code</field>
+            <field name="code">model._cron_instagram_refresh_statistics()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="priority">5</field>
+        </record>
+
+        <record
+            id="param_graph_version"
+            model="ir.config_parameter"
+            forcecreate="True"
+        >
+            <field name="key">social_media_instagram.graph_version</field>
+            <field name="value">v25.0</field>
+        </record>
+    </data>
+</odoo>

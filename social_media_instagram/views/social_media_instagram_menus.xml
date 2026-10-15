@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <menuitem
+        name="Instagram"
+        id="social_instagram_menu"
+        parent="social_media_base.social_root_menu"
+        sequence="5"
+        groups="social_media_base.group_social_media_user"
+    >
+        <menuitem
+            name="To publish manually"
+            id="social_instagram_pending_menu"
+            action="social_post_account_instagram_pending_action"
+            sequence="1"
+        />
+        <menuitem
+            name="Statistics"
+            id="social_instagram_statistics_menu"
+            action="social_post_account_instagram_statistics_action"
+            sequence="2"
+        />
+    </menuitem>
+</odoo>

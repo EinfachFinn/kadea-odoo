@@ -1,0 +1,2 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_wizard_instagram_mark_published_user,wizard.instagram.mark.published user,model_wizard_instagram_mark_published,social_media_base.group_social_media_user,1,1,1,1

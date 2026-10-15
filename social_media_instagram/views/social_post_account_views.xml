@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record model="ir.ui.view" id="social_post_account_view_form_instagram">
+        <field name="name">social.post.account.view.form.instagram</field>
+        <field name="model">social.post.account</field>
+        <field name="priority">20</field>
+        <field name="arch" type="xml">
+            <form create="0" delete="0">
+                <header>
+                    <button
+                        type="object"
+                        name="action_instagram_mark_published"
+                        class="oe_highlight"
+                        string="Mark as published"
+                        invisible="media_type != 'instagram' or state != 'manual'"
+                    />
+                    <button
+                        type="object"
+                        name="action_open_post_account_url"
+                        string="Open on Instagram"
+                        invisible="not post_account_url"
+                    />
+                    <button
+                        type="object"
+                        name="action_instagram_refresh"
+                        string="Refresh statistics"
+                        invisible="media_type != 'instagram' or not remote_ref"
+                    />
+                    <field
+                        name="state"
+                        widget="statusbar"
+                        statusbar_visible="manual,posted"
+                    />
+                </header>
+                <div
+                    class="alert alert-danger"
+                    role="alert"
+                    invisible="state != 'failed' or not failed_description"
+                >
+                    <field name="failed_description" readonly="1" />
+                </div>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="account_id" readonly="1" />
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="media_type" invisible="1" />
+                            <field name="remote_ref" invisible="1" />
+                            <field name="post_id" readonly="1" />
+                            <field name="instagram_post_format" />
+                            <field name="instagram_scheduled_date" />
+                            <field
+                                name="published_date"
+                                readonly="1"
+                                invisible="not published_date"
+                            />
+                        </group>
+                        <group invisible="state != 'posted'">
+                            <field
+                                name="post_account_url"
+                                string="Link"
+                                widget="url"
+                                readonly="1"
+                            />
+                            <field name="instagram_media_product_type" />
+                            <field name="instagram_statistics_date" />
+                        </group>
+                    </group>
+                    <notebook>
+                        <page name="content" string="Content to publish">
+                            <group>
+                                <field
+                                    name="message"
+                                    string="Caption"
+                                    widget="CopyClipboardText"
+                                    readonly="1"
+                                />
+                                <field
+                                    name="instagram_first_comment"
+                                    widget="CopyClipboardText"
+                                    invisible="not instagram_first_comment"
+                                />
+                                <field
+                                    name="instagram_publish_notes"
+                                    invisible="not instagram_publish_notes"
+                                />
+                                <field
+                                    name="image_ids"
+                                    string="Images"
+                                    widget="many2many_binary"
+                                    readonly="1"
+                                    invisible="not image_ids"
+                                />
+                                <field
+                                    name="video_ids"
+                                    string="Videos"
+                                    widget="many2many_binary"
+                                    readonly="1"
+                                    invisible="not video_ids"
+                                />
+                            </group>
+                        </page>
+                        <page
+                            name="statistics"
+                            string="Statistics"
+                            invisible="state != 'posted'"
+                        >
+                            <group>
+                                <group>
+                                    <field name="impression_count" string="Views" />
+                                    <field name="instagram_reach" />
+                                    <field name="engagement" string="Engagement (%)" />
+                                </group>
+                                <group>
+                                    <field name="like_count" string="Likes" />
+                                    <field name="comment_count" string="Comments" />
+                                    <field name="share_count" string="Shares" />
+                                    <field name="instagram_saved" />
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter />
+            </form>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="social_post_account_view_list_instagram">
+        <field name="name">social.post.account.view.list.instagram</field>
+        <field name="model">social.post.account</field>
+        <field name="priority">20</field>
+        <field name="arch" type="xml">
+            <list create="0" default_order="instagram_scheduled_date">
+                <field name="instagram_scheduled_date" />
+                <field name="account_id" />
+                <field name="instagram_post_format" />
+                <field name="message" string="Caption" />
+                <field name="state" widget="badge" decoration-warning="state == 'manual'" decoration-success="state == 'posted'" />
+                <button
+                    type="object"
+                    name="action_instagram_mark_published"
+                    string="Mark as published"
+                    icon="fa-check"
+                    invisible="state != 'manual'"
+                />
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="social_post_account_view_list_instagram_stats">
+        <field name="name">social.post.account.view.list.instagram.statistics</field>
+        <field name="model">social.post.account</field>
+        <field name="priority">21</field>
+        <field name="arch" type="xml">
+            <list create="0" default_order="published_date desc">
+                <field name="published_date" />
+                <field name="account_id" />
+                <field name="instagram_media_product_type" string="Type" />
+                <field name="message" string="Caption" />
+                <field name="impression_count" string="Views" sum="Total" />
+                <field name="instagram_reach" sum="Total" />
+                <field name="like_count" string="Likes" sum="Total" />
+                <field name="comment_count" string="Comments" sum="Total" />
+                <field name="share_count" string="Shares" sum="Total" />
+                <field name="instagram_saved" sum="Total" />
+                <field name="engagement" string="Engagement (%)" avg="Average" />
+            </list>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="social_post_account_view_pivot_instagram">
+        <field name="name">social.post.account.view.pivot.instagram</field>
+        <field name="model">social.post.account</field>
+        <field name="arch" type="xml">
+            <pivot string="Instagram statistics">
+                <field name="published_date" interval="month" type="row" />
+                <field name="account_id" type="col" />
+                <field name="impression_count" type="measure" />
+                <field name="instagram_reach" type="measure" />
+                <field name="like_count" type="measure" />
+                <field name="comment_count" type="measure" />
+                <field name="instagram_saved" type="measure" />
+            </pivot>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="social_post_account_view_graph_instagram">
+        <field name="name">social.post.account.view.graph.instagram</field>
+        <field name="model">social.post.account</field>
+        <field name="arch" type="xml">
+            <graph string="Instagram statistics" type="line">
+                <field name="published_date" interval="week" />
+                <field name="impression_count" type="measure" />
+            </graph>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="social_post_account_view_kanban_inherit">
+        <field name="name">social.post.account.view.kanban.inherit.instagram</field>
+        <field name="model">social.post.account</field>
+        <field
+            name="inherit_id"
+            ref="social_media_base.social_post_account_view_kanban"
+        />
+        <field name="arch" type="xml">
+            <xpath
+                expr="//div[@t-if=&quot;record.state.raw_value == 'deleted'&quot;]"
+                position="after"
+            >
+                <div t-if="record.state.raw_value == 'manual'" class="pt-1">
+                    <span
+                        class="badge text-bg-warning"
+                        title="Planned: publish it by hand in the Instagram app"
+                    >
+                        <i class="fa fa-hand-pointer-o" aria-hidden="true" />
+                        To publish manually
+                    </span>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="social_post_account_instagram_pending_action">
+        <field name="name">Instagram: to publish</field>
+        <field name="res_model">social.post.account</field>
+        <field name="view_mode">list,form</field>
+        <field
+            name="view_ids"
+            eval="[Command.clear(),
+                   Command.create({'view_mode': 'list', 'view_id': ref('social_post_account_view_list_instagram')}),
+                   Command.create({'view_mode': 'form', 'view_id': ref('social_post_account_view_form_instagram')})]"
+        />
+        <field
+            name="domain"
+        >[('media_type', '=', 'instagram'), ('state', '=', 'manual')]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Nothing to publish by hand</p>
+            <p>
+                Planned Instagram posts show up here when they are due. Publish
+                them in the Instagram app; Odoo links them automatically.
+            </p>
+        </field>
+    </record>
+
+    <record model="ir.actions.act_window" id="social_post_account_instagram_statistics_action">
+        <field name="name">Instagram: statistics</field>
+        <field name="res_model">social.post.account</field>
+        <field name="view_mode">list,pivot,graph,form</field>
+        <field
+            name="view_ids"
+            eval="[Command.clear(),
+                   Command.create({'view_mode': 'list', 'view_id': ref('social_post_account_view_list_instagram_stats')}),
+                   Command.create({'view_mode': 'pivot', 'view_id': ref('social_post_account_view_pivot_instagram')}),
+                   Command.create({'view_mode': 'graph', 'view_id': ref('social_post_account_view_graph_instagram')}),
+                   Command.create({'view_mode': 'form', 'view_id': ref('social_post_account_view_form_instagram')})]"
+        />
+        <field
+            name="domain"
+        >[('media_type', '=', 'instagram'), ('state', '=', 'posted')]</field>
+    </record>
+</odoo>

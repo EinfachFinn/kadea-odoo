@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <record model="ir.ui.view" id="social_post_view_form_inherit">
+        <field name="name">social.post.view.form.inherit.instagram</field>
+        <field name="model">social.post</field>
+        <field name="inherit_id" ref="social_media_base.social_post_view_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//header/button[@name='action_create_post_account']" position="after">
+                <button
+                    type="object"
+                    name="action_instagram_open_pending"
+                    class="oe_highlight"
+                    string="Mark as published on Instagram"
+                    invisible="not instagram_pending_count"
+                />
+            </xpath>
+            <xpath expr="//sheet" position="before">
+                <div
+                    class="alert alert-warning"
+                    role="alert"
+                    invisible="not has_instagram or state not in ('draft', 'planned')"
+                >
+                    <i class="fa fa-instagram me-1" title="Instagram" />
+                    Instagram posts are <b>not uploaded automatically</b>. When
+                    the post is due you get a to-do with the caption and the
+                    medias; publish it in the Instagram app and Odoo links it
+                    by itself (or use <i>Mark as published on Instagram</i>).
+                </div>
+                <div
+                    class="alert alert-info"
+                    role="alert"
+                    invisible="state != 'manual'"
+                >
+                    <i class="fa fa-hand-pointer-o me-1" title="Manual" />
+                    This post is due: publish it in the Instagram app. It is
+                    detected automatically within 30 minutes, or press
+                    <i>Mark as published on Instagram</i>.
+                </div>
+            </xpath>
+            <xpath expr="//field[@name='message']" position="after">
+                <field name="has_instagram" invisible="1" />
+                <field name="instagram_pending_count" invisible="1" />
+                <field
+                    name="instagram_post_format"
+                    invisible="not has_instagram"
+                    readonly="state != 'draft'"
+                />
+                <field
+                    name="instagram_first_comment"
+                    invisible="not has_instagram"
+                    readonly="state not in ('draft', 'planned', 'manual')"
+                    placeholder="#hashtags to paste as first comment"
+                />
+                <field
+                    name="instagram_publish_notes"
+                    invisible="not has_instagram"
+                    placeholder="Music, location, collaborators, people to tag..."
+                />
+            </xpath>
+        </field>
+    </record>
+
+    <record model="ir.ui.view" id="social_post_view_search_inherit">
+        <field name="name">social.post.view.search.inherit.instagram</field>
+        <field name="model">social.post</field>
+        <field name="inherit_id" ref="social_media_base.social_post_view_search" />
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <filter
+                    string="To publish manually"
+                    name="instagram_manual"
+                    domain="[('state', '=', 'manual')]"
+                />
+            </xpath>
+        </field>
+    </record>
+
+    <template
+        id="social_media_post_preview"
+        name="Instagram post preview"
+    >
+        <div class="mb-3 border rounded bg-view" style="max-width: 420px;">
+            <div class="d-flex align-items-center p-2">
+                <img
+                    width="32"
+                    height="32"
+                    src="/social_media_instagram/static/img/instagram.png"
+                    class="rounded-circle me-2"
+                    alt="Instagram"
+                    loading="lazy"
+                />
+                <b t-esc="author" />
+            </div>
+            <div
+                t-if="image_ids"
+                class="ratio ratio-1x1 bg-light"
+            >
+                <img
+                    t-attf-src="/web/image/#{image_ids[0]._origin.id or image_ids[0].id}"
+                    style="object-fit: cover;"
+                    alt="Image"
+                />
+            </div>
+            <div
+                t-else=""
+                class="ratio ratio-1x1 bg-light d-flex align-items-center justify-content-center text-muted"
+            >
+                <span class="d-flex align-items-center justify-content-center">
+                    <i class="fa fa-picture-o fa-3x" title="No image" />
+                </span>
+            </div>
+            <div class="px-2 pt-2 fs-5">
+                <i class="fa fa-heart-o me-3" title="Like" />
+                <i class="fa fa-comment-o me-3" title="Comment" />
+                <i class="fa fa-paper-plane-o" title="Share" />
+            </div>
+            <div class="p-2" style="white-space: pre-wrap;"><b
+                    t-esc="author"
+                /> <t t-esc="message" /></div>
+        </div>
+    </template>
+</odoo>
