@@ -1,6 +1,7 @@
 ---
 tags: [anleitung, wissensmanagement]
 status: aktuell
+stand: 2026-10-16
 ---
 # Anleitung Wissensmanagement
 
@@ -8,7 +9,27 @@ status: aktuell
 > Das Wissensmanagement ist unser eigenes „Notion in Odoo“: ein Wiki für alles, was wir wissen. Dazu gehören Prozesse, Kundenwissen, Projektnotizen, Protokolle und Vorlagen.
 > Alles passiert direkt in Odoo: Seiten schreiben, Kontakte, Projekte, Aufgaben oder Angebote erwähnen, Aufgaben anlegen, im Chatter teilen. Gespeichert wird im Wissensordner auf dem Odoo-Server.
 
-Diese Anleitung erklärt alle Funktionen und unsere gemeinsamen Regeln für die Nutzung.
+## Kurzfassung: Das reicht für den Alltag
+
+| Ich will … | So geht’s |
+|---|---|
+| **Eine Seite finden** | Links im Baum klicken oder `/` drücken und suchen |
+| **Etwas schreiben** | Oben rechts **Schreiben** (oder `Strg+E`), dann einfach lostippen wie in Word. Speichert automatisch. |
+| **Etwas einfügen** (Tabelle, Liste, Box, Spalten …) | `/` tippen und auswählen |
+| **Eine andere Seite verlinken** | `[[` tippen und die Seite wählen |
+| **Kunde, Projekt, Aufgabe, Angebot, Post … erwähnen** | `@` tippen, Bereich wählen, Namen tippen. Es erscheint eine Live-Karte aus Odoo. |
+| **Mit anderen gleichzeitig schreiben** | Einfach machen: Alle sehen die Änderungen sofort, mit farbigem Cursor und Namen |
+| **Eine neue Seite anlegen** | **+ Neue Seite** oben links, optional mit Vorlage |
+| **Eine Odoo-Aufgabe aus einer Checkliste machen** | Lesemodus, Maus auf den Punkt, **☑ Aufgabe** |
+| **Etwas rückgängig machen** | `Strg+Z` beim Schreiben, ältere Stände über 🕘 Versionsverlauf, gelöschte Seiten über 🗑 Papierkorb |
+| **Eine Frage zu einer Stelle stellen** | Text markieren, **Kommentieren** |
+
+> [!tip] Drei Regeln, dann passt alles
+> 1. **Mit @ erwähnen** statt Namen nur zu tippen, dann bleibt alles mit Odoo verbunden.
+> 2. **Verlinken statt kopieren:** Steht etwas schon woanders, mit `[[` verlinken.
+> 3. **Jede Seite beginnt mit 1–2 Sätzen:** Worum geht es, für wen ist das?
+
+Alles Weitere steht unten im Detail. Niemand muss das alles auswendig wissen: `/` und `@` zeigen immer an, was möglich ist.
 
 ---
 
@@ -27,8 +48,8 @@ Diese Anleitung erklärt alle Funktionen und unsere gemeinsamen Regeln für die 
 | Rolle | Darf |
 |---|---|
 | **Leser** | Alle (freigegebenen) Seiten lesen, suchen, kommentieren, Favoriten setzen |
-| **Bearbeiter** | Zusätzlich: Seiten anlegen, schreiben, verschieben, umbenennen, duplizieren, löschen, freigeben |
-| **Administrator** | Zusätzlich: Einstellungen (Wissensordner, Stil) und Ordnerrechte |
+| **Bearbeiter** | Zusätzlich: Seiten anlegen, schreiben, verschieben, umbenennen, duplizieren, löschen und aus dem Papierkorb wiederherstellen, freigeben |
+| **Administrator** | Zusätzlich: Einstellungen (Wissensordner, Stil, erwähnbare Bereiche), Ordnerrechte, Papierkorb leeren |
 
 Die Rolle wird in Odoo unter *Einstellungen › Benutzer › Wissensmanagement* vergeben.
 
@@ -59,8 +80,9 @@ Die Rolle wird in Odoo unter *Einstellungen › Benutzer › Wissensmanagement* 
 | **Zuletzt bearbeitet** | Die zuletzt geänderten Seiten (für alle gleich) |
 | **Seiten** | Der Seitenbaum zum Durchklicken |
 | 🗺 (oben in der Seitenleiste) | Übersicht: Graph, Tags, verwaiste Seiten, kaputte Links |
+| 🗑 (oben in der Seitenleiste) | Papierkorb: gelöschte Seiten wiederherstellen |
 | ⭐ neben dem Seitennamen | Seite zu Favoriten hinzufügen |
-| 👥 Avatare | Wer gerade auf der Seite ist (✏️ = bearbeitet gerade) |
+| 👥 Avatare | Wer gerade auf der Seite ist (✏️ = schreibt gerade mit) |
 | 💬 | Kommentare |
 | 🕘 | Versionsverlauf |
 | 🔗 / 🌐 | Freigeben (🌐 = Seite ist freigegeben) |
@@ -172,32 +194,35 @@ Man schreibt einfach los. Die Symbolleiste bietet:
 | Symbol | Funktion |
 |---|---|
 | **H** | Überschrift 1–6 |
-| **B** / *I* / ~~S~~ | Fett / Kursiv / Durchgestrichen |
-| — | Trennlinie |
-| ❝ | Zitat |
+| **B** / *I* | Fett / Kursiv |
 | • / 1. / ☑ | Aufzählung / Nummerierung / Checkliste |
-| ⇥ ⇤ | Einrücken / Ausrücken |
-| ▦ | Tabelle (mit Zeilen/Spalten per Rechtsklick) |
-| 🔗 | Link (Webseite) |
 | 📖 | Link zu einer anderen Wissensseite |
 | @ | Odoo-Datensatz erwähnen |
 | 🖼 | Bild oder Datei einfügen |
 | ⓘ | Hinweisbox |
-| `</>` | Code / Code-Block |
+| ≡ (zentriert) | Absatz zentrieren (an/aus) |
+| ▥ | Spalten nebeneinander |
+| ▦ | Tabelle (Zeilen/Spalten per Rechtsklick) |
+| ❝ / — | Zitat / Trennlinie |
+| 🔗 | Link zu einer Webseite |
+| ⋯ | Seltenes: Durchgestrichen, Code, Code-Block (je nach Fensterbreite rutschen Knöpfe hierhin) |
 
 - **Speichert automatisch** (oben steht „Gespeichert“ oder „Ungespeichert“). `Strg+S` speichert sofort.
 - Bilder lassen sich auch einfach **einfügen** (`Strg+V`) oder **hineinziehen**.
-- Für Profis: Unten rechts zeigt „Markdown-Quelltext anzeigen“ den Rohtext.
+- Für Profis: Unten rechts zeigt „Markdown-Quelltext anzeigen“ den Rohtext (gesperrt, solange andere live mitschreiben).
 
 ### Chips anpassen: Klick oder Rechtsklick
-Seitenlinks, @-Erwähnungen und Hinweisboxen erscheinen im Editor als farbige **Chips**. Ein Klick (oder Rechtsklick) auf einen Chip öffnet ein Menü. Codes muss sich niemand merken.
+Seitenlinks, @-Erwähnungen, Hinweisboxen, Spalten und zentrierte Bereiche erscheinen im Editor als farbige **Chips** (kleine Etiketten). Ein Klick (oder Rechtsklick) auf einen Chip öffnet ein Menü. Codes muss sich niemand merken.
 
 | Chip | Im Menü einstellbar |
 |---|---|
-| **Hinweisbox** (z. B. `TIPP`) | Art: Notiz, Info, Tipp, Wichtig, Erledigt, Frage, Warnung, Achtung, Beispiel, Zitat, To-do · Darstellung: immer offen, einklappbar oder eingeklappt |
+| **Hinweisbox** (z. B. `TIPP`) | Art: Notiz, Info, Tipp, Wichtig, Erledigt, Frage, Warnung, Achtung, Beispiel, Zitat, To-do · Darstellung: immer offen, einklappbar oder eingeklappt · Box entfernen |
 | **Seitenlink** | Zielseite (mit Suche), Abschnitt der Seite (Auswahlliste), angezeigter Text, „Inhalt einbetten statt verlinken“, Öffnen, Link entfernen |
 | **Bild** | Breite in Pixeln |
 | **@-Erwähnung** | Datensatz öffnen, anderen Datensatz wählen, nur Text behalten |
+| **Spalten** | Aufteilung, Spalte hinzufügen, Spalten auflösen |
+| **Spalte** (einzeln) | Diese Spalte entfernen |
+| **Zentriert** | Zentrierung aufheben |
 
 `Esc` oder ein Klick daneben schließt das Menü.
 
@@ -222,6 +247,7 @@ Am Zeilenanfang (oder nach einem Leerzeichen) `/` tippen, dann öffnet sich ein 
 | `/seite` | Link zu Wissensseite |
 | `/erwähnen` | @-Erwähnung |
 | `/aufgabe` | Aufgabe erwähnen **oder** neue Odoo-Aufgabe anlegen |
+| `/post` | Social-Media-Post erwähnen (wenn Social Media installiert ist) |
 | `/vorlage` | Inhalt einer Vorlage einfügen |
 | `/bild` | Bild / Datei hochladen |
 | `/datum` | Heutiges Datum |
@@ -315,6 +341,8 @@ Ein Klick auf Chip oder Karte öffnet den Datensatz in Odoo. Über den Zurück-P
 - **Kontakt:** Firma, E-Mail, Telefon, Tags, Bild/Logo
 - **Angebot / Rechnung:** Kunde, Status, Betrag, Datum / Fälligkeit
 - **Lead:** Phase, erwarteter Umsatz, Kunde, Priorität
+- **Social-Media-Post:** erste Zeile des Texts, Kanäle (z. B. Instagram, LinkedIn), Status, geplant bzw. veröffentlicht am
+- **Social-Media-Konto:** Plattform und Name des Kanals
 
 Durchgestrichene Erwähnungen 🔗 zeigen auf einen gelöschten Datensatz.
 
@@ -362,7 +390,7 @@ Ein **Klick auf das Spalten-Etikett** oben im Bereich öffnet das Menü:
 
 | Menüpunkt | Wirkung |
 |---|---|
-| Aufteilung | Gleich breit, Schmal \| Breit (1:2), Breit \| Schmal (2:1) oder Schmal \| Sehr breit (1:3) |
+| Aufteilung | Gleich breit, Schmal \| Breit (1:2), Breit \| Schmal (2:1) oder Seitenleiste \| Inhalt (1:3) |
 | Spalte hinzufügen | Neue Spalte rechts anfügen |
 | Spalten auflösen | Inhalte wieder untereinander, nichts geht verloren |
 
@@ -422,7 +450,7 @@ verantwortlich: Anna
 Unter jedem Seitentitel steht **„Zuletzt bearbeitet von @Person · vor 5 Minuten“**. Wurde die Datei direkt auf dem Server geändert (nicht über Odoo), steht dort *„Zuletzt direkt im Wissensordner geändert“*.
 
 ### Wer ist gerade da?
-Oben rechts erscheinen die **Avatare aller, die die Seite gerade offen haben**. Ein ✏️ bedeutet „bearbeitet gerade“. Dazu erscheint ein gelbes Banner, z. B. „Max bearbeitet diese Seite gerade.“
+Oben rechts erscheinen die **Avatare aller, die die Seite gerade offen haben**. Ein ✏️ bedeutet „bearbeitet gerade“. Dazu erscheint ein gelbes Banner, z. B. „Max bearbeitet diese Seite gerade. Ihr schreibt live gemeinsam …“
 
 ### Gemeinsam live schreiben
 - Mehrere Personen können **gleichzeitig im Schreibmodus** an derselben Seite arbeiten, wie in Google Docs.
@@ -463,7 +491,7 @@ Oben rechts erscheinen die **Avatare aller, die die Seite gerade offen haben**. 
 | **Umbenennen** | ⋯ › *Umbenennen* (alle Links werden angepasst) |
 | **Duplizieren** | ⋯ › *Duplizieren* (inkl. Unterseiten) |
 | **Löschen** | ⋯ › *Löschen*. Die Seite samt Unterseiten wandert in den **Papierkorb** (🗑 in der Seitenleiste) und lässt sich dort 30 Tage lang wiederherstellen. |
-| **Link kopieren** | ⋯ › *[[Link]] kopieren* zum Einfügen in andere Seiten |
+| **Link kopieren** | ⋯ › *Link zur Seite kopieren*. Der Odoo-Link funktioniert in Chatter, E-Mails und Aufgaben. Innerhalb des Wissens verlinkt man mit `[[`. |
 
 ---
 
@@ -504,8 +532,21 @@ Oben rechts erscheinen die **Avatare aller, die die Seite gerade offen haben**. 
 
 ---
 
-## 16. Ordnerrechte (für Admins)
+## 16. Für Admins: Einstellungen und Ordnerrechte
 
+### Einstellungen
+*Wissensmanagement › Konfiguration › Einstellungen*:
+
+| Einstellung | Bedeutung |
+|---|---|
+| **Wissensordner** | Ordner auf dem Odoo-Server, in dem die Seiten liegen (gehört ins Server-Backup) |
+| **Vorlagen-Ordner** / **Anhänge-Ordner** | Wo Vorlagen bzw. eingefügte Bilder und Dateien liegen (Standard: „Vorlagen“, „Anhänge“) |
+| **Standardmodus** | Ob Seiten zuerst im Lesen- oder Schreibmodus öffnen |
+| **Erwähnbare Odoo-Modelle** | Welche Bereiche per @ erwähnt werden können |
+| **Stil-Vorlage** | Standard (Odoo-Look), Notion (ruhig, reduziert), Buch (Serifenschrift zum Lesen), Kompakt (viel auf einen Blick) |
+| **Farben**, **Typografie**, **Eigenes CSS** | Akzentfarbe, Farben für Seitenlinks und Erwähnungen, Schriftgröße, Textbreite |
+
+### Ordnerrechte
 Unter *Wissensmanagement › Konfiguration › Ordnerrechte* lässt sich pro Ordner festlegen:
 
 | Feld | Bedeutung |
@@ -584,10 +625,13 @@ Archiv/                    ← Erledigtes, nicht löschen, sondern hierhin versc
 > **Ganze Seite gelöscht:** 🗑 Papierkorb in der Seitenleiste, Seite suchen, **Wiederherstellen**. Das geht 30 Tage lang.
 
 > [!question]- Die Seite zeigt „Seite wurde zwischenzeitlich geändert“.
-> Jemand hat gleichzeitig an **derselben Stelle** gearbeitet. Wähle „Meine Version speichern“ oder „Andere Version laden“. Die andere Fassung bleibt in jedem Fall im Versionsverlauf.
+> Das kommt nur noch selten vor, nämlich wenn der Live-Abgleich gerade nicht möglich war (z. B. Verbindung weg). Wähle „Meine Version speichern“ oder „Andere Version laden“. Die andere Fassung bleibt in jedem Fall im Versionsverlauf.
+
+> [!question]- Ich sehe die Änderungen der anderen nicht live.
+> Kurz warten: Spätestens nach wenigen Sekunden kommen sie an. Bleibt es dabei, Seite neu laden. Hält das an, sollte ein Admin prüfen, ob der Odoo-Websocket erreichbar ist (siehe README).
 
 > [!question]- Ein @-Vorschlag erscheint nicht.
-> Ein leeres @ zeigt zuerst die Kategorien (@kontakt, @projekt …). Prüfe, ob der Bereich installiert und freigeschaltet ist und ob du in Odoo Zugriff darauf hast.
+> Ein leeres @ zeigt zuerst die Bereiche (@kontakt, @projekt …). Fehlt ein Bereich, ist er nicht installiert oder nicht freigeschaltet (Kapitel 16), oder du hast in Odoo keinen Zugriff darauf. Social-Media-Posts findest du über Wörter aus dem Post-Text, z. B. `@posts sommeraktion`.
 
 ---
 
@@ -602,7 +646,7 @@ Archiv/                    ← Erledigtes, nicht löschen, sondern hierhin versc
 | Seite verlinken | `[[` tippen |
 | Dinge nebeneinander | `/2 spalten`, Aufteilung per Klick aufs Spalten-Etikett |
 | Zentrieren | Zentrieren-Knopf oder `/zentriert` |
-| Kontakt, Projekt, Aufgabe … erwähnen | `@` tippen, z. B. @kontakt, @projekt, @aufgabe, @angebot, @lead, @rechnung, @produkt, @mitarbeiter, @ticket, @termin, @posts |
+| Kontakt, Projekt, Aufgabe … erwähnen | `@` tippen, z. B. @kontakt, @projekt, @aufgabe, @angebot, @lead, @rechnung, @produkt, @mitarbeiter, @ticket, @termin, @posts, @kanal |
 | Große Vorschaukarte | Erwähnung allein in eine Zeile schreiben |
 | Aufgabe aus Checkliste | Lesemodus, Maus auf den Punkt, **☑ Aufgabe** |
 | Kommentieren | Text markieren, **Kommentieren** |
@@ -610,7 +654,7 @@ Archiv/                    ← Erledigtes, nicht löschen, sondern hierhin versc
 | Gelöschte Seite zurückholen | 🗑 in der Seitenleiste, **Wiederherstellen** |
 | Seite merken | ⭐ |
 | Sortieren | Im Baum ziehen (oben/unten = Reihenfolge, Mitte = Unterseite) |
-| Teilen intern | ⋯ › *In Chatter teilen* |
+| Teilen intern | ⋯ › *In Chatter teilen* oder ⋯ › *Link zur Seite kopieren* |
 | Teilen extern | 🔗 › *Jeder mit dem Link* / *Kundenportal* |
 | PDF | ⋯ › *Drucken / als PDF* |
 | Wo wird ein Kunde erwähnt? | Im Odoo-Kontakt oben auf **📖 Wissen** |
